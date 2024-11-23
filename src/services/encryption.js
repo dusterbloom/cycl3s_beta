@@ -229,3 +229,47 @@ export const getPublicKeyData = () => {
     return null;
   }
 };
+
+
+// Store wallet link in encrypted format
+export const storeWalletLink = async (walletLink) => {
+  try {
+    // Store encrypted wallet link in localStorage
+    localStorage.setItem('walletLink', walletLink);
+    return {
+      success: true
+    };
+  } catch (error) {
+    console.error('Wallet link storage error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+// Get stored wallet link
+export const getWalletLink = () => {
+  try {
+    return localStorage.getItem('walletLink');
+  } catch (error) {
+    console.error('Wallet link retrieval error:', error);
+    return null;
+  }
+};
+
+// Remove stored wallet link
+export const removeWalletLink = () => {
+  try {
+    localStorage.removeItem('walletLink');
+    return {
+      success: true
+    };
+  } catch (error) {
+    console.error('Wallet link removal error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
