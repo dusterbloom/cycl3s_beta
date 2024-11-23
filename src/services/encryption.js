@@ -216,10 +216,15 @@ export const decryptMessage = async (encryptedData, senderPublicKeyData) => {
 
 // Check if keys are stored
 export const hasStoredKeys = () => {
-  return localStorage.getItem('privateKey') !== null &&
-         localStorage.getItem('publicKey') !== null;
+  try {
+    const publicKey = localStorage.getItem('publicKey');
+    const privateKey = localStorage.getItem('privateKey');
+    return !!(publicKey && privateKey);
+  } catch (error) {
+    console.error('Error checking stored keys:', error);
+    return false;
+  }
 };
-
 // Get public key data
 export const getPublicKeyData = () => {
   try {
@@ -247,6 +252,8 @@ export const storeWalletLink = async (walletLink) => {
     };
   }
 };
+
+
 
 // Get stored wallet link
 export const getWalletLink = () => {

@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getUserProfile, getUserPosts, toggleFollow } from '../services/bluesky';
 
+import { hasStoredKeys, getPublicKeyData, storeKeyPair } from '../services/encryption';
+
+
 export default function UserProfile() {
   const { handle } = useParams();
   const navigate = useNavigate();
@@ -11,10 +14,47 @@ export default function UserProfile() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [publicKey, setPublicKey] = useState(null);
+  const [copyStatus, setCopyStatus] = useState('');
+
 
   useEffect(() => {
-    loadProfileAndPosts();
-  }, [handle]);
+    const init = async () => {
+      await loadProfileAndPosts();
+      if (session?.handle === handle) {
+        await initializeKeys();
+      }
+    };
+    init();
+  }, [handle, session?.handle]);
+
+  const initializeKeys = async () => {
+    try {
+      console.log("Checking stored keys:", hasStoredKeys());
+      if (!hasStoredKeys()) {
+        console.log("No keys found, generating new pair");
+        await storeKeyPair();
+      }
+      const pubKey = getPublicKeyData();
+      console.log('Public key loaded:', pubKey);
+      setPublicKey(pubKey);
+    } catch (error) {
+      console.error('Key initialization error:', error);
+      setError('Failed to initialize encryption keys');
+    }
+  };
+  
+  const copyPublicKey = async () => {
+    try {
+      const keyString = JSON.stringify(publicKey);
+      await navigator.clipboard.writeText(keyString);
+      setCopyStatus('Public key copied!');
+      setTimeout(() => setCopyStatus(''), 2000);
+    } catch (error) {
+      console.error('Copy error:', error);
+      setCopyStatus('Failed to copy');
+    }
+  };
 
   const loadProfileAndPosts = async () => {
     try {
@@ -145,14 +185,60 @@ export default function UserProfile() {
               <span className="stat-label">Following</span>
             </div>
           </div>
+
+
+          {/* Add encryption section only for own profile */}
+          {session?.handle === profile.handle && (
+            <div className="profile-encryption">
+              <h3>Encryption Public Key</h3>
+              {publicKey ? (
+                <div className="public-key-container">
+                  <div className="public-key-info">
+                    <p className="public-key-label">Share this key to receive encrypted messages:</p>
+                    <code className="public-key-value">
+                      {Array.isArray(publicKey)
+                        ? publicKey.join(',')
+                        : typeof publicKey === 'object'
+                          ? JSON.stringify(publicKey, null, 2)
+                          : String(publicKey)
+                      }
+                    </code>
+                  </div>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={copyPublicKey}
+                  >
+                    Copy Full Key
+                  </button>
+                  {copyStatus && (
+                    <div className={`copy-status ${copyStatus.includes('Failed') ? 'error' : 'success'}`}>
+                      {copyStatus}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="public-key-container">
+                  <p className="error">No encryption keys found</p>
+                  <button
+                    className="btn btn-primary"
+                    onClick={initializeKeys}
+                  >
+                    Generate Keys
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          
         </div>
       </div>
 
       <div className="profile-posts">
         <h2 className="posts-header">Posts</h2>
-        {posts.map((post) => (
-          <div key={post.uri} className="post">
-            <div className="post-header">
+        {posts.map((post, index) => (
+            <div key={`${post.uri}-${index}`} className="post">
+              <div className="post-header">
               <div className="post-author-info">
                 <span className="post-time">
                   {new Date(post.record.createdAt).toLocaleString()}

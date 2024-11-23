@@ -1,17 +1,44 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getMyProfile } from '../services/bluesky';
-import LinkWallet from './LinkWallet';
+import { hasStoredKeys, getPublicKeyData, storeKeyPair } from '../services/encryption';
 
 export default function Profile() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [publicKey, setPublicKey] = useState(null);
+  const [copyStatus, setCopyStatus] = useState('');
   const { session } = useAuth();
 
   useEffect(() => {
-    loadProfile();
+    const init = async () => {
+      console.log('Initializing profile...');
+      await loadProfile();
+      console.log('Profile loaded, initializing keys...');
+      await initializeKeys();
+      console.log('Keys initialized');
+    };
+    init();
   }, []);
+
+
+  const initializeKeys = async () => {
+    try {
+      console.log("Checking stored keys:", hasStoredKeys());
+      if (!hasStoredKeys()) {
+        console.log("No keys found, generating new pair");
+        await storeKeyPair();
+      }
+      const pubKey = getPublicKeyData();
+      console.log('Public key loaded:', pubKey);
+      setPublicKey(pubKey);
+    } catch (error) {
+      console.error('Key initialization error:', error);
+      setError('Failed to initialize encryption keys');
+    }
+  };
+
 
   const loadProfile = async () => {
     try {
@@ -29,7 +56,26 @@ export default function Profile() {
     }
   };
 
+  const copyPublicKey = async () => {
+    try {
+      const keyString = JSON.stringify(publicKey);
+      await navigator.clipboard.writeText(keyString);
+      setCopyStatus('Public key copied!');
+      setTimeout(() => setCopyStatus(''), 2000);
+    } catch (error) {
+      console.error('Copy error:', error);
+      setCopyStatus('Failed to copy');
+    }
+  };
+
   if (loading) {
+    // Add this right before the return statement
+    console.log('Rendering Profile with:', {
+      profile,
+      publicKey,
+      error,
+      loading
+    });
     return (
       <div className="container" style={{ textAlign: 'center', padding: '2rem' }}>
         Loading profile...
@@ -53,6 +99,8 @@ export default function Profile() {
     );
   }
 
+
+
   return (
     <div className="container">
       <div className="profile-card">
@@ -64,8 +112,8 @@ export default function Profile() {
         <div className="profile-content">
           <div className="profile-header">
             {profile.avatar && (
-              <img 
-                src={profile.avatar} 
+              <img
+                src={profile.avatar}
                 alt={`${profile.displayName || profile.handle}'s avatar`}
                 className="profile-avatar"
               />
@@ -77,11 +125,11 @@ export default function Profile() {
               <p className="profile-handle">@{profile.handle}</p>
             </div>
           </div>
-          
+
           {profile.description && (
             <p className="profile-description">{profile.description}</p>
           )}
-          
+
           <div className="profile-stats">
             <div className="stat">
               <span className="stat-value">{profile.postsCount || 0}</span>
@@ -96,11 +144,52 @@ export default function Profile() {
               <span className="stat-label">Following</span>
             </div>
           </div>
+
+          {/* Add Public Key Section */}
+          <div className="profile-encryption">
+            <h3>Encryption Public Key</h3>
+            {publicKey ? (
+              <div className="public-key-container">
+                <div className="public-key-info">
+                  <p className="public-key-label">Share this key to receive encrypted messages:</p>
+                  <code className="public-key-value">
+                    {Array.isArray(publicKey)
+                      ? publicKey.join(',')
+                      : typeof publicKey === 'object'
+                        ? JSON.stringify(publicKey, null, 2)
+                        : String(publicKey)
+                    }
+                  </code>
+                </div>
+                <button
+                  className="btn btn-secondary"
+                  onClick={copyPublicKey}
+                >
+                  Copy Full Key
+                </button>
+                {copyStatus && (
+                  <div className={`copy-status ${copyStatus.includes('Failed') ? 'error' : 'success'}`}>
+                    {copyStatus}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="public-key-container">
+                <p className="error">No encryption keys found</p>
+                <button
+                  className="btn btn-primary"
+                  onClick={initializeKeys}
+                >
+                  Generate Keys
+                </button>
+              </div>
+            )}
+          </div>
+
+          
         </div>
       </div>
-
-      {/* Add LinkWallet component here */}
-      <LinkWallet />
     </div>
   );
 }
+
