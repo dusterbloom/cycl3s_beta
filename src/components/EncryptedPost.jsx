@@ -11,48 +11,6 @@ export default function EncryptedPost({ post }) {
   const [decryptedContent, setDecryptedContent] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  const handleDecrypt = async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      if (!hasStoredKeys()) {
-        throw new Error('Encryption keys not found. Please refresh the page.');
-      }
-
-      // Extract encrypted data from post
-      const match = post.record.text.match(/🔒 @(\w+) #e2e ([\w-]+)/);
-      if (!match) {
-        throw new Error('Invalid encrypted message format');
-      }
-
-      const [, recipientHandle, encryptedData] = match;
-
-      // Verify recipient
-      if (recipientHandle !== session?.handle) {
-        throw new Error('This message is not encrypted for you');
-      }
-
-      // In a real app, you would fetch the sender's public key from a server
-      // For now, we'll use our own public key for demonstration
-      const senderPublicKey = getPublicKeyData();
-
-      const decrypted = await decryptMessage(encryptedData, senderPublicKey);
-      
-      if (decrypted.success) {
-        setDecryptedContent(decrypted.data);
-      } else {
-        throw new Error(decrypted.error || 'Unable to decrypt message');
-      }
-    } catch (error) {
-      console.error('Decryption error:', error);
-      setError(error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Extract recipient handle from the post text
   const getRecipientHandle = () => {
     const match = post.record.text.match(/🔒 @(\w+)/);
@@ -65,6 +23,45 @@ export default function EncryptedPost({ post }) {
     return recipientHandle && session?.handle === recipientHandle;
   };
 
+
+  const handleDecrypt = async () => {
+    setoading(true);
+   setError(null);
+   
+   try {
+     if (!hasStoredKeys()) {
+       throw new Error('Encryption keys not found. Please refresh the page.');
+     }
+      // Extract encrypted data from post
+     const match = post.record.text.match(/🔒 @(\w+) #e2e ([\w-]+)/);
+     if (!match) {
+       throw new Error('Invalid encrypted message format');
+     }
+      const [, recipientHandle, encryptedData] = match;
+      // Verify recipient
+     if (recipientHandle !== session?.handle) {
+       throw new Error('This message is not encrypted for you');
+     }
+      // Get sender's public key
+     const senderPublicKey = await getPublicKeyData(post.author.handle);
+     if (!senderPublicKey) {
+       throw new Error('Unable to retrieve sender\'s encryption key');
+     }
+      const decrypted = await decryptMessage(encryptedData);
+     if (decrypted.success) {
+       setDecryptedContent(decrypted.data);
+     } else {
+       throw new Error(decrypted.error || 'Unable to decrypt message');
+     }
+   } catch (error) {
+     console.error('Decryption error:', error);
+     setError(error.message);
+   } finally {
+     setLoading(false);
+   }
+  ;
+
+  }
   return (
     <div className="encrypted-post">
       <div className="encrypted-post-header">

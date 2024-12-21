@@ -22,13 +22,16 @@ export default function CreatePost() {
   // Check for keys on component mount
   useEffect(() => {
     const initializeKeys = async () => {
-      if (!hasStoredKeys()) {
-        try {
-          await storeKeyPair();
-        } catch (error) {
-          console.error('Failed to initialize encryption keys:', error);
-          setError('Failed to initialize encryption keys');
+      try {
+        if (!hasStoredKeys()) {
+          const result = await storeKeyPair();
+          if (!result.success) {
+            throw new Error(result.error || 'Failed to initialize encryption keys');
+          }
         }
+      } catch (error) {
+        console.error('Key initialization error:', error);
+        setError('Failed to initialize encryption keys. Please refresh the page.');
       }
     };
 
@@ -40,8 +43,8 @@ export default function CreatePost() {
       setSearchResults([]);
       return;
     }
-
-    try {
+     try {
+      setRecipient(null); // Clear current recipient when searching
       const response = await searchUsers(query);
       if (response.success) {
         setSearchResults(response.data);
@@ -51,54 +54,77 @@ export default function CreatePost() {
     }
   };
 
-  const selectRecipient = (user) => {
-    setRecipient(user.handle);
-    setShowUserSearch(false);
-    setSearchResults([]);
-  };
+  const selectRecipient = async (user) => {
+      try {
+        setLoading(true);
+        setError('');
+        
+        // Verify recipient's public key availability
+        const recipientPublicKey = await getPublicKeyData(user.handle);
+        if (!recipientPublicKey) {
+          throw new Error(`${user.handle} hasn't set up encryption keys yet`);
+        }
+        
+        // Store recipient data including their public key
+        setRecipient({
+          handle: user.handle,
+          displayName: user.displayName,
+          publicKey: recipientPublicKey
+        });
+        
+        setShowUserSearch(false);
+        setSearchResults([]);
+      } catch (error) {
+        console.error('Recipient validation error:', error);
+        setError(error.message);
+        setRecipient(null); // Clear recipient on error
+      } finally {
+        setLoading(false);
+      };
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!content.trim()) return;
-
-    setLoading(true);
+     setLoading(true);
     setError('');
-
     try {
       let postContent = content;
       
       if (isEncrypted) {
-        if (!recipient) {
-          throw new Error('Please select a recipient for encrypted message');
+        if (!recipient?.handle || !recipient?.publicKey) {
+          throw new Error('Please select a valid recipient for encrypted message');
         }
-
+        
+        // Check message length before encryption
+        if (content.length > 100) {
+          throw new Error('Encrypted messages must be under 100 characters due to encryption overhead.');
+        }
+        
         if (!hasStoredKeys()) {
           throw new Error('Encryption keys not found. Please refresh the page.');
         }
-
-        // In a real app, you would fetch the recipient's public key from a server
-        // For now, we'll use our own public key for demonstration
-        const recipientPublicKey = getPublicKeyData();
         
-        const encrypted = await encryptMessage(content, recipientPublicKey);
+        // Use pre-validated recipient public key
+        const encrypted = await encryptMessage(content, recipient.publicKey);
         if (!encrypted.success) {
           throw new Error(encrypted.error || 'Encryption failed');
         }
-
-        postContent = `🔒 @${recipient} #e2e ${encrypted.data}`;
-
-        // Check if the final post content is within limits
-        if (postContent.length > 300) {
-          throw new Error('Encrypted message is too long. Please try a shorter message.');
-        }
+        
+        postContent = `🔒 @${recipient.handle} #e2e ${encrypted.data}`;
       }
-
+      
+      // Final length check
+      if (postContent.length > 300) {
+        throw new Error('Message too long for Bluesky. Please try a shorter message.');
+      }
+      
       const response = await createPost(postContent);
       
       if (response.success) {
         setContent('');
         setIsEncrypted(false);
-        setRecipient('');
+        setRecipient(null);
       } else {
         throw new Error('Failed to create post');
       }
@@ -108,7 +134,7 @@ export default function CreatePost() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
     <form onSubmit={handleSubmit} className="create-post">
@@ -124,18 +150,19 @@ export default function CreatePost() {
         
         {isEncrypted && (
           <div className="recipient-selector">
-            <input
-              type="text"
-              className="input recipient-input"
-              placeholder="Search recipient..."
-              value={recipient}
-              onChange={(e) => {
-                setRecipient(e.target.value);
-                handleUserSearch(e.target.value);
-                setShowUserSearch(true);
-              }}
-              onFocus={() => setShowUserSearch(true)}
-            />
+    <input  type="text"
+ className="input recipient-input"
+ placeholder="Search recipient..."
+ value={recipient?.handle || ''} // Only use the handle for display
+ onChange={(e) => {
+   handleUserSearch(e.target.value);
+   setShowUserSearch(true);
+ }}
+ onFocus={() => setShowUserSearch(true)}
+>
+</input>
+
+            
             {showUserSearch && searchResults.length > 0 && (
               <div className="recipient-results">
                 {searchResults.map(user => (
@@ -175,14 +202,15 @@ export default function CreatePost() {
       )}
 
       {isEncrypted && (
-        <div className="encryption-info">
-          <span className="encryption-badge">🔒 End-to-End Encrypted</span>
-          {recipient && (
-            <span className="encryption-recipient">
-              to @{recipient}
-            </span>
-          )}
-        </div>
+         <div className="encryption-info">
+         <span className="encryption-badge">🔒 End-to-End Encrypted</span>
+         {recipient?.handle && (
+           <span className="encryption-recipient">
+             to @{recipient.handle}
+             {recipient.displayName && ` (${recipient.displayName})`}
+           </span>
+         )}
+       </div>
       )}
 
       <div className="create-post-actions">
