@@ -3,11 +3,14 @@ import { getPublicKey as getPublicKeyFromRegistry } from './wallet';
 
 
 const KEY_VERSION = "1.0";
-const KEY_STORAGE_PREFIX = "cycl3_keys_";
 const KEY_ALGORITHM = {
   name: "ECDH",
   namedCurve: "P-256",
 };
+
+const KEY_STORAGE_PREFIX = "cycl3_keys_";
+
+
 
 class SignalProtocolStore {
   constructor() {
@@ -69,63 +72,83 @@ const store = new SignalProtocolStore();
 export const initializeSignalProtocol = async (userId) => {
   try {
     const existingIdentityKey = await store.getIdentityKeyPair();
+    let publicKeyBundle;
+
     if (existingIdentityKey) {
       console.log("Using existing identity key");
-      const identityKeyPair = existingIdentityKey;
+      const registrationId = await store.getLocalRegistrationId();
+      
+      // Get existing public key bundle from localStorage
+      const existingBundle = localStorage.getItem(
+        `${KEY_STORAGE_PREFIX}${userId}_publicKey`
+      );
+      
+      if (existingBundle) {
+        publicKeyBundle = JSON.parse(existingBundle);
+      } else {
+        // Recreate bundle from existing identity key
+        publicKeyBundle = {
+          registrationId: parseInt(registrationId),
+          identityPubKey: existingIdentityKey.pubKey,
+          // You might want to regenerate these if needed
+          signedPreKey: existingIdentityKey.signedPreKey,
+          preKey: existingIdentityKey.preKey
+        };
+      }
+    } else {
+      // Generate new keys
+      const identityKeyPair = await SignalProtocol.KeyHelper.generateIdentityKeyPair();
+      const registrationId = SignalProtocol.KeyHelper.generateRegistrationId();
+      console.log("Generated new registration id:", registrationId);
 
-  } else {
+      // Generate prekeys
+      const preKeyId = Math.floor(Math.random() * 16777215 + 1);
+      const preKey = await SignalProtocol.KeyHelper.generatePreKey(preKeyId);
+      const signedPreKeyId = Math.floor(Math.random() * 16777215 + 1);
+      const signedPreKey = await SignalProtocol.KeyHelper.generateSignedPreKey(
+        identityKeyPair,
+        signedPreKeyId
+      );
+    
+      // Store keys
+      await store.storePreKey(preKeyId, preKey.keyPair);
+      await store.storeSignedPreKey(signedPreKeyId, signedPreKey.keyPair);
+      await store.storeIdentityKey(userId, identityKeyPair);
 
+      localStorage.setItem(
+        `${KEY_STORAGE_PREFIX}identityKey`,
+        JSON.stringify(identityKeyPair)
+      );
+      localStorage.setItem(
+        `${KEY_STORAGE_PREFIX}registrationId`,
+        registrationId.toString()
+      );
 
-    const identityKeyPair =
-      await SignalProtocol.KeyHelper.generateIdentityKeyPair();
-      const registrationId =
-      SignalProtocol.KeyHelper.generateRegistrationId();
-      console.log("reg id", registrationId);
+      // Create public key bundle
+      publicKeyBundle = {
+        registrationId,
+        identityPubKey: identityKeyPair.pubKey,
+        signedPreKey: {
+          keyId: signedPreKeyId,
+          publicKey: signedPreKey.keyPair.pubKey,
+          signature: signedPreKey.signature,
+        },
+        preKey: {
+          keyId: preKeyId,
+          publicKey: preKey.keyPair.pubKey,
+        },
+      };
 
-    // Generate prekeys
-    const preKeyId = Math.floor(Math.random() * 16777215 + 1);
-    const preKey = await SignalProtocol.KeyHelper.generatePreKey(preKeyId);
-    const signedPreKeyId = Math.floor(Math.random() * 16777215 + 1);
-    const signedPreKey = await SignalProtocol.KeyHelper.generateSignedPreKey(
-      identityKeyPair,
-      signedPreKeyId
-    );
-  
-    // Store keys
-    await store.storePreKey(preKeyId, preKey.keyPair);
-    await store.storeSignedPreKey(signedPreKeyId, signedPreKey.keyPair);
-    await store.storeIdentityKey(userId, identityKeyPair);
+      localStorage.setItem(
+        `${KEY_STORAGE_PREFIX}${userId}_publicKey`,
+        JSON.stringify(publicKeyBundle)
+      );
+    }
 
-    localStorage.setItem(
-      `${KEY_STORAGE_PREFIX}identityKey`,
-      JSON.stringify(identityKeyPair)
-    );
-    localStorage.setItem(
-      `${KEY_STORAGE_PREFIX}registrationId`,
-      registrationId.toString()
-    );
-    // Create public key bundle
-    const publicKeyBundle = {
-      registrationId,
-      identityPubKey: identityKeyPair.pubKey,
-      signedPreKey: {
-        keyId: signedPreKeyId,
-        publicKey: signedPreKey.keyPair.pubKey,
-        signature: signedPreKey.signature,
-      },
-      preKey: {
-        keyId: preKeyId,
-        publicKey: preKey.keyPair.pubKey,
-      },
-    };
-    localStorage.setItem(
-      `${KEY_STORAGE_PREFIX}${userId}_publicKey`,
-      JSON.stringify(publicKeyBundle)
-    );
     return {
       success: true,
       publicKey: publicKeyBundle,
-    };}
+    };
   } catch (error) {
     console.error("Signal initialization error:", error);
     return {
@@ -267,6 +290,53 @@ export const hasStoredKeys = (session) => {
   }
 };
 
+export const generateAndStoreKeyPair = async (handle) => {
+  try {
+    // Generate ECDH keypair
+    const keyPair = await crypto.subtle.generateKey(
+      {
+        name: "ECDH",
+        namedCurve: "P-256",
+      },
+      true,
+      ["deriveKey", "deriveBits"]
+    );
+
+    // Export keys to JWK format
+    const publicKey = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+    const privateKey = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
+
+    // Store private key locally
+    localStorage.setItem(
+      `${KEY_STORAGE_PREFIX}${handle}_privateKey`,
+      JSON.stringify({
+        privateKey,
+        created: Date.now(),
+        version: KEY_VERSION
+      })
+    );
+
+    // Convert any BigInt values to strings before stringifying
+    const serializedPublicKey = Object.entries(publicKey).reduce((acc, [key, value]) => {
+      acc[key] = typeof value === 'bigint' ? value.toString() : value;
+      return acc;
+    }, {});
+
+    // For the contract, send the serialized public key
+    const publicKeyString = btoa(JSON.stringify(serializedPublicKey));
+
+    return {
+      success: true,
+      publicKey: publicKeyString
+    };
+  } catch (error) {
+    console.error("Key generation error:", error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
 // Store key pair with encryption
 export const storeKeyPair = async (session) => {
     const registrationId = localStorage.getItem(`${KEY_STORAGE_PREFIX}registrationId`);

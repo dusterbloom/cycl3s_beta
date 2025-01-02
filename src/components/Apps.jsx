@@ -143,22 +143,53 @@ export default function Apps() {
     }
   };
 
-  // Check wallet connection
+  // // Check wallet connection
+  // const checkWalletConnection = async () => {
+  //   try {
+  //     const client = await getSigningClient();
+  //     if (client && client.address) {  // Add null check
+  //       setWalletStatus(prev => ({
+  //         ...prev,
+  //         connected: true,
+  //         address: client.address,
+  //         error: null
+  //       }));
+
+  //       // Check if public key is already registered
+  //       const keyData = await getPublicKey(client.address);
+  //       if (keyData && keyData.success) {  // Add null check
+  //         setPublicKey(keyData.publicKey);
+  //       }
+  //     }
+  //   } catch (error) {
+  //     console.error('Wallet connection error:', error);
+  //     setWalletStatus(prev => ({
+  //       ...prev,
+  //       connected: false,
+  //       address: null,
+  //       error: error.message
+  //     }));
+  //   }
+  // };
+
   const checkWalletConnection = async () => {
     try {
-      const client = await getSigningClient();
-      if (client && client.address) {  // Add null check
+      const { client, address } = await getSigningClient();
+      if (client && address) {
         setWalletStatus(prev => ({
           ...prev,
           connected: true,
-          address: client.address,
+          address,
           error: null
         }));
-
+  
         // Check if public key is already registered
-        const keyData = await getPublicKey(client.address);
-        if (keyData && keyData.success) {  // Add null check
+        const keyData = await getPublicKey(address);
+        if (keyData.success) {
           setPublicKey(keyData.publicKey);
+          console.log('Public key loaded:', keyData.publicKey);
+        } else {
+          console.error('Failed to get/generate public key:', keyData.error);
         }
       }
     } catch (error) {

@@ -2,11 +2,10 @@ import { DirectSecp256k1Wallet } from '@cosmjs/proto-signing';
 import { getSigningJsdClient, jsd } from 'hyperwebjs';
 import { SigningCosmWasmClient } from '@cosmjs/cosmwasm-stargate';
 import { GasPrice } from '@cosmjs/stargate';
+import { initializeSignalProtocol } from './signalEncryption'; // Add this import
+import { generateAndStoreKeyPair } from './signalEncryption';
 
-// Constants - hardcoded for development
-const CHAIN_ID = "hyperweb";
-const RPC_ENDPOINT = "http://localhost:26657";
-const CONTRACT_INDEX = "9";
+
 
 export const connectKeplr = async () => {
   try {
@@ -25,57 +24,6 @@ export const connectKeplr = async () => {
   }
 };
 
-export const suggestChain = async () => {
-  try {
-    await window.keplr.experimentalSuggestChain({
-      chainId: CHAIN_ID,
-      chainName: "Hyperweb",
-      rpc: RPC_ENDPOINT,
-      rest: "http://localhost:1317",
-      bip44: {
-        coinType: 118,
-      },
-      bech32Config: {
-        bech32PrefixAccAddr: "hyper",
-        bech32PrefixAccPub: "cosmospub",
-        bech32PrefixValAddr: "cosmosvaloper",
-        bech32PrefixValPub: "cosmosvaloperpub",
-        bech32PrefixConsAddr: "cosmosvalcons",
-        bech32PrefixConsPub: "cosmosvalconspub",
-      },
-      currencies: [{
-        coinDenom: "HYPER",
-        coinMinimalDenom: "uhyper",
-        coinDecimals: 6,
-        coinGeckoId: "cosmos",
-      }],
-      feeCurrencies: [{
-        coinDenom: "HYPER",
-        coinMinimalDenom: "uhyper",
-        coinDecimals: 6,
-        coinGeckoId: "cosmos",
-      }],
-      stakeCurrency: {
-        coinDenom: "HYPER",
-        coinMinimalDenom: "uhyper",
-        coinDecimals: 6,
-        coinGeckoId: "cosmos",
-      },
-      gasPriceStep: {
-        low: 0.01,
-        average: 0.025,
-        high: 0.04,
-      },
-    });
-    return { success: true };
-  } catch (error) {
-    console.error("Failed to suggest chain:", error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-};
 
 
 export const getWalletLink = async () => {
@@ -102,64 +50,188 @@ export const getWalletLink = async () => {
   }
 };
 
+// export const getPublicKey = async (handle) => {
+//   try {
+//     console.log('Getting public key for handle:', handle);
+    
+//     // Create query client as shown in the docs
+//     const queryClient = await jsd.ClientFactory.createRPCQueryClient({
+//       rpcEndpoint: RPC_ENDPOINT
+//     });
+
+//     // Query the contract state directly using localState
+//     const state = await queryClient.jsd.jsd.localState({ 
+//       index: CONTRACT_INDEX, 
+//       key: `bluesky/${handle}` // Contract stores keys with this prefix
+//     });
+    
+//     console.log('Query response:', state);
+
+//     if (!state || !state.value) {
+//       return { 
+//         success: false, 
+//         error: `No public key found for handle: ${handle}` 
+//       };
+//     }
+
+//     return { 
+//       success: true, 
+//       publicKey: state.value 
+//     };
+//   } catch (error) {
+//     console.error('Error fetching public key:', error);
+//     return { 
+//       success: false, 
+//       error: error.message 
+//     };
+//   }
+// };
+
 export const getPublicKey = async (handle) => {
   try {
-    console.log('Getting public key for handle:', handle);
-    
-    // Create query client as shown in the docs
     const queryClient = await jsd.ClientFactory.createRPCQueryClient({
       rpcEndpoint: RPC_ENDPOINT
     });
 
-    // Query the contract state directly using localState
     const state = await queryClient.jsd.jsd.localState({ 
       index: CONTRACT_INDEX, 
-      key: `bluesky/${handle}` // Contract stores keys with this prefix
+      key: `bluesky/${handle}` // Using Bluesky handle
     });
     
-    console.log('Query response:', state);
-
+    // If no key exists, generate and register one
     if (!state || !state.value) {
-      return { 
-        success: false, 
-        error: `No public key found for handle: ${handle}` 
-      };
+      const { success, publicKey, error } = await generateAndStoreKeyPair(handle);
+      
+      if (!success) {
+        throw new Error(error || 'Failed to generate keys');
+      }
+
+      // Register the public key with Bluesky handle
+      const registrationResult = await registerPublicKey(
+        handle,  // Using Bluesky handle instead of wallet address
+        publicKey
+      );
+      
+      if (!registrationResult.success) {
+        throw new Error('Failed to register public key in contract');
+      }
+
+      return { success: true, publicKey };
     }
 
     return { 
       success: true, 
-      publicKey: state.value 
+      publicKey: JSON.parse(state.value) 
     };
   } catch (error) {
-    console.error('Error fetching public key:', error);
-    return { 
-      success: false, 
-      error: error.message 
-    };
+    console.error('Error with public key:', error);
+    return { success: false, error: error.message };
   }
 };
 
+
+
+// export const registerPublicKey = async (handle) => {
+//   try {
+//     if (!window.keplr) {
+//       throw new Error("Keplr extension not found");
+//     }
+
+//     // First suggest chain
+//     await suggestChain();
+    
+//     // Enable chain
+//     await window.keplr.enable(CHAIN_ID);
+    
+//     // Get the public key from Keplr
+//     const key = await window.keplr.getKey(CHAIN_ID);
+//     console.log('Got key from Keplr:', key);
+    
+//     // Convert public key to base64 string
+//     const publicKeyString = btoa(String.fromCharCode.apply(null, key.pubKey));
+//     console.log('Public key as base64:', publicKeyString);
+
+//     // Get signer
+//     const offlineSigner = window.keplr.getOfflineSigner(CHAIN_ID);
+//     const accounts = await offlineSigner.getAccounts();
+//     const address = accounts[0].address;
+
+//     // Create signing client using hyperwebjs
+//     const client = await getSigningJsdClient({
+//       rpcEndpoint: RPC_ENDPOINT,
+//       signer: offlineSigner,
+//       gasPrice: GasPrice.fromString("0.025uhyper")
+//     });
+
+//     // Create message using jsd composer
+//     const msg = jsd.jsd.MessageComposer.fromPartial.eval({
+//       creator: address,
+//       index: CONTRACT_INDEX,
+//       fnName: "registerBlueskyHandle",
+//       arg: JSON.stringify({ 
+//         handle, 
+//         publicKey: publicKeyString  // Send the base64 string
+//       })
+//     });
+
+//     const fee = {
+//       amount: [{ denom: "uhyper", amount: "100000" }],
+//       gas: "550000"
+//     };
+
+//     console.log('Broadcasting message:', msg);
+//     const result = await client.signAndBroadcast(address, [msg], fee);
+//     console.log('Transaction result:', result);
+
+//     return { success: true, result };
+//   } catch (error) {
+//     console.error('Error registering public key:', error);
+//     return { success: false, error: error.message };
+//   }
+// };
 export const registerPublicKey = async (handle, publicKey) => {
   try {
-    const { client, address } = await getSigningClient();
+    if (!window.keplr) {
+      throw new Error("Keplr extension not found");
+    }
 
-    // Create message as shown in the docs
-    const msg = jsd.jsd.MessageComposer.fromPartial.eval({
-      creator: address,
-      index: CONTRACT_INDEX,
-      fnName: "registerBlueskyHandle",
-      arg: JSON.stringify({ 
-        handle, 
-        publicKey 
-      })
+    console.log('Registering public key for Bluesky handle:', handle);
+    console.log('Public key to register:', publicKey);
+
+    await suggestChain();
+    await window.keplr.enable(CHAIN_ID);
+    
+    const offlineSigner = window.keplr.getOfflineSigner(CHAIN_ID);
+    const accounts = await offlineSigner.getAccounts();
+    const address = accounts[0].address;
+
+    const client = await getSigningJsdClient({
+      rpcEndpoint: RPC_ENDPOINT,
+      signer: offlineSigner,
+      chainId: CHAIN_ID
     });
 
-    const fee = { 
+    // Create message data with Bluesky handle
+    const msgArg = `{"handle":"${handle}","publicKey":"${publicKey}"}`;
+    console.log('Message arg:', msgArg);
+
+    const msg = {
+      typeUrl: "/jsd.jsd.MsgEval",
+      value: {
+        creator: address,
+        index: CONTRACT_INDEX,
+        fnName: "registerBlueskyHandle",
+        arg: msgArg
+      }
+    };
+
+    const fee = {
       amount: [{ denom: "uhyper", amount: "100000" }],
       gas: "550000"
     };
 
     const result = await client.signAndBroadcast(address, [msg], fee);
+    console.log('Transaction result:', result);
     return { success: true, result };
   } catch (error) {
     console.error('Error registering public key:', error);
@@ -167,6 +239,89 @@ export const registerPublicKey = async (handle, publicKey) => {
   }
 };
 
+
+// Add query function for public keys
+export const queryPublicKey = async (handle) => {
+  try {
+    const queryClient = await jsd.ClientFactory.createRPCQueryClient({
+      rpcEndpoint: RPC_ENDPOINT
+    });
+
+    const msg = {
+      get_public_key_for_handle: {
+        handle
+      }
+    };
+
+    const result = await queryClient.jsd.jsd.query({ 
+      index: CONTRACT_INDEX,
+      msg 
+    });
+
+    return { success: true, publicKey: result.result };
+  } catch (error) {
+    console.error('Error querying public key:', error);
+    return { success: false, error: error.message };
+  }
+};
+// Update constants at the top of the file
+const CHAIN_ID = "hyperweb-1";  // Updated chain ID
+const RPC_ENDPOINT = "http://localhost:26657";
+const REST_ENDPOINT = "http://localhost:1317";
+const CONTRACT_INDEX = "9";
+
+export const suggestChain = async () => {
+  try {
+    console.log('Suggesting chain with ID:', CHAIN_ID);
+    
+    await window.keplr.experimentalSuggestChain({
+      chainId: CHAIN_ID,
+      chainName: "Hyperweb Devnet",
+      rpc: RPC_ENDPOINT,
+      rest: REST_ENDPOINT,
+      bip44: {
+        coinType: 118
+      },
+      bech32Config: {
+        bech32PrefixAccAddr: "hyper",
+        bech32PrefixAccPub: "hyperpub",
+        bech32PrefixValAddr: "hypervaloper",
+        bech32PrefixValPub: "hypervaloperpub",
+        bech32PrefixConsAddr: "hypervalcons",
+        bech32PrefixConsPub: "hypervalconspub"
+      },
+      currencies: [{
+        coinDenom: "HYPER",
+        coinMinimalDenom: "uhyper",
+        coinDecimals: 6,
+        coinGeckoId: "cosmos"
+      }],
+      feeCurrencies: [{
+        coinDenom: "HYPER",
+        coinMinimalDenom: "uhyper",
+        coinDecimals: 6,
+        coinGeckoId: "cosmos",
+        gasPriceStep: {
+          low: 0,
+          average: 0.025,
+          high: 0.04
+        }
+      }],
+      stakeCurrency: {
+        coinDenom: "HYPER",
+        coinMinimalDenom: "uhyper",
+        coinDecimals: 6,
+        coinGeckoId: "cosmos"
+      }
+    });
+    
+    console.log('Chain suggested successfully');
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to suggest chain:", error);
+    return { success: false, error: error.message };
+  }
+};
 
 // Get the current wallet's address
 const getCurrentAddress = async () => {
@@ -239,219 +394,10 @@ export const getSigningClient = async () => {
   }
 };
 
-// Keep existing Keplr functions
-// export const connectKeplr = async () => {
-//   try {
-//     if (!window.keplr) {
-//       throw new Error("Keplr extension not found");
-//     }
-
-//     await window.keplr.enable(process.env.CHAIN_ID || "hyperweb");
-//     return { success: true };
-//   } catch (error) {
-//     console.error("Failed to connect to Keplr:", error);
-//     return {
-//       success: false,
-//       error: error.message
-//     };
-//   }
-// };
 
 // Helper function to get RPC endpoint
 const getRpcEndpoint = async () => {
   // You might want to implement this based on your configuration
   return RPC_ENDPOINT;
 };
-
-// // src/services/wallet.js
-
-// import {
-//   SigningCosmWasmClient,
-//   CosmWasmClient,
-// } from '@cosmjs/cosmwasm-stargate';
-// import { GasPrice } from '@cosmjs/stargate';
-
-// const RPC_ENDPOINT = 'https://archway-rpc.polkachu.com'; // Replace with actual RPC endpoint
-// const CONTRACT_ADDRESS = 'archway1275jwjpktae4y4y0cdq274a2m0jnpekhttnfuljm6n59wnpyd62qppqxq0'; // Replace with the actual ArchID contract address
-// const CHAIN_ID = 'archway-1'; // Replace with the actual chain ID
-
-// // Function to get a SigningCosmWasmClient
-// export const getSigningClient = async () => {
-//   if (!window.keplr) {
-//     throw new Error('Keplr extension not found');
-//   }
-
-//   await window.keplr.enable(CHAIN_ID);
-
-//   const offlineSigner = window.getOfflineSigner(CHAIN_ID);
-//   const accounts = await offlineSigner.getAccounts();
-
-//   const client = await SigningCosmWasmClient.connectWithSigner(
-//     RPC_ENDPOINT,
-//     offlineSigner,
-//     { gasPrice: GasPrice.fromString('0.025uarch') } // Adjust the gas price and denom
-//   );
-
-//   return { client, address: accounts[0].address };
-// };
-
-// // Function to register public key
-// export const registerPublicKey = async (username, publicKey) => {
-//   try {
-//     const { client, address } = await getSigningClient();
-
-//     const executeMsg = {
-//       register_identity: {
-//         identity: username,
-//         data: { public_key: publicKey },
-//       },
-//     };
-
-//     const result = await client.execute(
-//       address,
-//       CONTRACT_ADDRESS,
-//       executeMsg,
-//       'auto',
-//       'Register public key'
-//     );
-
-//     console.log('Public key registered:', result);
-//     return { success: true, result };
-//   } catch (error) {
-//     console.error('Error registering public key:', error);
-//     return { success: false, error: error.message };
-//   }
-// };
-
-// // Function to get public key
-// export const getPublicKey = async (username) => {
-//   try {
-//     const client = await CosmWasmClient.connect(RPC_ENDPOINT);
-
-//     const query = {
-//       get_identity: { identity: username },
-//     };
-
-//     const result = await client.queryContractSmart(CONTRACT_ADDRESS, query);
-
-//     if (result && result.data && result.data.public_key) {
-//       return { success: true, publicKey: result.data.public_key };
-//     } else {
-//       throw new Error('Public key not found');
-//     }
-//   } catch (error) {
-//     console.error('Error fetching public key:', error);
-//     return { success: false, error: error.message };
-//   }
-// };
-
-
-// export const connectKeplr = async () => {
-//   try {
-//     // Check if Keplr is installed
-//     if (!window.keplr) {
-//       throw new Error('Please install Keplr extension');
-//     }
-
-//     // Enable the chain
-//     await window.keplr.enable(CHAIN_ID);
-
-//     // Get the offlineSigner
-//     const offlineSigner = window.keplr.getOfflineSigner(CHAIN_ID);
-
-//     // Get user's address
-//     const accounts = await offlineSigner.getAccounts();
-//     const address = accounts[0].address;
-
-//     return {
-//       success: true,
-//       data: {
-//         address,
-//         signer: offlineSigner
-//       }
-//     };
-//   } catch (error) {
-//     console.error('Keplr connection error:', error);
-//     return {
-//       success: false,
-//       error: error.message
-//     };
-//   }
-// };
-
-// export const getKeplrAccount = async () => {
-//   try {
-//     if (!window.keplr) {
-//       throw new Error('Keplr not found');
-//     }
-
-//     const key = await window.keplr.getKey(CHAIN_ID);
-//     return {
-//       success: true,
-//       data: {
-//         address: key.bech32Address,
-//         pubKey: key.pubKey,
-//         name: key.name
-//       }
-//     };
-//   } catch (error) {
-//     console.error('Get account error:', error);
-//     return {
-//       success: false,
-//       error: error.message
-//     };
-//   }
-// };
-
-// export const suggestChain = async () => {
-//   try {
-//     await window.keplr.experimentalSuggestChain({
-//       chainId: CHAIN_ID,
-//       chainName: CHAIN_NAME,
-//       rpc: 'https://rpc-cosmoshub.keplr.app',
-//       rest: 'https://lcd-cosmoshub.keplr.app',
-//       bip44: {
-//         coinType: 118,
-//       },
-//       bech32Config: {
-//         bech32PrefixAccAddr: 'cosmos',
-//         bech32PrefixAccPub: 'cosmospub',
-//         bech32PrefixValAddr: 'cosmosvaloper',
-//         bech32PrefixValPub: 'cosmosvaloperpub',
-//         bech32PrefixConsAddr: 'cosmosvalcons',
-//         bech32PrefixConsPub: 'cosmosvalconspub'
-//       },
-//       currencies: [{
-//         coinDenom: 'ATOM',
-//         coinMinimalDenom: 'uatom',
-//         coinDecimals: 6,
-//         coinGeckoId: 'cosmos'
-//       }],
-//       feeCurrencies: [{
-//         coinDenom: 'ATOM',
-//         coinMinimalDenom: 'uatom',
-//         coinDecimals: 6,
-//         coinGeckoId: 'cosmos'
-//       }],
-//       stakeCurrency: {
-//         coinDenom: 'ATOM',
-//         coinMinimalDenom: 'uatom',
-//         coinDecimals: 6,
-//         coinGeckoId: 'cosmos'
-//       },
-//       gasPriceStep: {
-//         low: 0.01,
-//         average: 0.025,
-//         high: 0.04
-//       }
-//     });
-
-//     return { success: true };
-//   } catch (error) {
-//     console.error('Suggest chain error:', error);
-//     return {
-//       success: false,
-//       error: error.message
-//     };
-//   }
-// };
+ 
