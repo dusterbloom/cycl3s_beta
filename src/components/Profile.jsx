@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getMyProfile } from '../services/bluesky';
-import { hasStoredKeys, getPublicKeyData, storeKeyPair } from '../services/encryption';
+import { hasStoredKeys, getPublicKeyData, storeKeyPair } from '../services/signalEncryption';
+import { initializeKeys } from '../utils/init';
 
 export default function Profile() {
   const [profile, setProfile] = useState(null);
@@ -11,34 +12,7 @@ export default function Profile() {
   const [copyStatus, setCopyStatus] = useState('');
   const { session } = useAuth();
 
-  useEffect(() => {
-    const init = async () => {
-      console.log('Initializing profile...');
-      await loadProfile();
-      console.log('Profile loaded, initializing keys...');
-      await initializeKeys();
-      console.log('Keys initialized');
-    };
-    init();
-  }, []);
-
-
-  const initializeKeys = async () => {
-    try {
-      console.log("Checking stored keys:", hasStoredKeys());
-      if (!hasStoredKeys()) {
-        console.log("No keys found, generating new pair");
-        await storeKeyPair();
-      }
-      const pubKey = getPublicKeyData();
-      console.log('Public key loaded:', pubKey);
-      setPublicKey(pubKey);
-    } catch (error) {
-      console.error('Key initialization error:', error);
-      setError('Failed to initialize encryption keys');
-    }
-  };
-
+  
 
   const loadProfile = async () => {
     try {

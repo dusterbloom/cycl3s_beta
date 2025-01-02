@@ -3,8 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getUserProfile, getUserPosts, toggleFollow } from '../services/bluesky';
 
-import { hasStoredKeys, getPublicKeyData, storeKeyPair } from '../services/encryption';
-
+import { hasStoredKeys, getPublicKeyData, storeKeyPair } from '../services/signalEncryption';
+import { initializeKeys } from '../utils/init';
 
 export default function UserProfile() {
   const { handle } = useParams();
@@ -17,33 +17,70 @@ export default function UserProfile() {
   const [publicKey, setPublicKey] = useState(null);
   const [copyStatus, setCopyStatus] = useState('');
 
+  // const initializeKeys = async () => {
+  //   try {
+  //     console.log("Checking stored keys:", hasStoredKeys(session));
+  //     let publicKey = null;
+  
+  //     if (!hasStoredKeys(session)) {
+  //       console.log("No keys found, generating new pair");
+  //       const { success, publicKey: newPublicKey } = await storeKeyPair(session);
+  //       if (!success) {
+  //         throw new Error("Failed to generate encryption keys");
+  //       }
+  //       publicKey = newPublicKey;
+  //     } else {
+  //       publicKey = await getPublicKeyData(session.handle);
+  //     }
+  
+  //     console.log('Public key loaded:', publicKey);
+  //     setPublicKey(publicKey);
+  //   } catch (error) {
+  //     console.error('Key initialization error:', error);
+  //     setError('Failed to initialize encryption keys');
+  //   }
+  // };
 
   useEffect(() => {
-    const init = async () => {
-      await loadProfileAndPosts();
-      if (session?.handle === handle) {
-        await initializeKeys();
+    const loadProfileAndPosts = async () => {
+      try {
+        setLoading(true);
+        const [profileResponse, postsResponse] = await Promise.all([
+          getUserProfile(handle),
+          getUserPosts(handle)
+        ]);
+
+        if (profileResponse.success) {
+          setProfile(profileResponse.data);
+        } else {
+          setError('Failed to load profile');
+        }
+
+        if (postsResponse.success) {
+          setPosts(postsResponse.data);
+        }
+
+        await initializeKeys(session, setPublicKey, setError);
+
+      } catch (error) {
+        console.error('Profile load error:', error);
+        setError('An unexpected error occurred');
+      } finally {
+        setLoading(false);
       }
     };
-    init();
-  }, [handle, session?.handle]);
 
-  const initializeKeys = async () => {
-    try {
-      console.log("Checking stored keys:", hasStoredKeys());
-      if (!hasStoredKeys()) {
-        console.log("No keys found, generating new pair");
-        await storeKeyPair();
-      }
-      const pubKey = getPublicKeyData();
-      console.log('Public key loaded:', pubKey);
-      setPublicKey(pubKey);
-    } catch (error) {
-      console.error('Key initialization error:', error);
-      setError('Failed to initialize encryption keys');
+    loadProfileAndPosts();
+  }, [handle,session]);
+
+  useEffect(() => {
+    if (session?.handle === handle) {
+      initializeKeys();
     }
-  };
-  
+  }, [session?.handle, handle, initializeKeys]);
+
+
+
   const copyPublicKey = async () => {
     try {
       const keyString = JSON.stringify(publicKey);

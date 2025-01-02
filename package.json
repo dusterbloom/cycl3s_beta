@@ -4,22 +4,34 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 5174",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy:key-registry": "node scripts/deploy-key-registry.js",
+    "build:key-registry": "yarn clean && yarn build"
   },
   "dependencies": {
     "@atproto/api": "^0.6.24",
+    "@cosmjs/cosmwasm-stargate": "^0.32.4",
+    "@cosmjs/launchpad": "^0.27.1",
+    "@cosmjs/proto-signing": "^0.32.4",
+    "@cosmjs/stargate": "^0.32.4",
+    "@privacyresearch/libsignal-protocol-typescript": "^0.0.16",
     "date-fns": "^2.30.0",
+    "hyperwebjs": "^0.0.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.15.0",
+    "starshipjs": "^2.4.1",
     "web3.storage": "^4.5.5"
   },
   "devDependencies": {
+    "@types/node": "^22.10.3",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
     "@vitejs/plugin-react": "^4.0.3",
+    "typescript": "^5.7.2",
     "vite": "^4.4.5"
-  }
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

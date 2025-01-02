@@ -1,8 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { connectKeplr, getKeplrAccount, suggestChain } from '../services/wallet';
+import { 
+  connectKeplr, 
+  getKeplrAccount, 
+  suggestChain,
+  getSigningClient,
+  registerPublicKey, 
+  getPublicKey 
+} from '../services/wallet';
 import { Link, useNavigate } from 'react-router-dom';
 import { storeWalletLink, getWalletLink, removeWalletLink } from '../services/encryption';
+
+
 
 export default function Apps() {
   const { session } = useAuth();
@@ -16,6 +25,9 @@ export default function Apps() {
   const [walletLink, setWalletLink] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
+  const [publicKey, setPublicKey] = useState(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const transactions = [
@@ -103,52 +115,117 @@ export default function Apps() {
   }, []);
 
   const checkWalletLink = async () => {
-    const link = await getWalletLink();
-    if (link.success) {
-      setWalletLink(link.data);
-    }
-  };
-
-  const checkWalletConnection = async () => {
-    const account = await getKeplrAccount();
-    if (account.success) {
+    try {
+      const result = await getWalletLink();
+      if (result && result.success) {  // Add null check
+        setWalletStatus({
+          isLinked: true,
+          address: result.data?.walletAddress,  // Optional chaining
+          error: null,
+          loading: false
+        });
+      } else {
+        setWalletStatus({
+          isLinked: false,
+          address: null,
+          error: null,
+          loading: false
+        });
+      }
+    } catch (error) {
+      console.error('Error checking wallet link:', error);
       setWalletStatus({
-        connected: true,
-        address: account.data.address,
-        error: null
+        isLinked: false,
+        address: null,
+        error: error.message,
+        loading: false
       });
     }
   };
 
+  // Check wallet connection
+  const checkWalletConnection = async () => {
+    try {
+      const client = await getSigningClient();
+      if (client && client.address) {  // Add null check
+        setWalletStatus(prev => ({
+          ...prev,
+          connected: true,
+          address: client.address,
+          error: null
+        }));
+
+        // Check if public key is already registered
+        const keyData = await getPublicKey(client.address);
+        if (keyData && keyData.success) {  // Add null check
+          setPublicKey(keyData.publicKey);
+        }
+      }
+    } catch (error) {
+      console.error('Wallet connection error:', error);
+      setWalletStatus(prev => ({
+        ...prev,
+        connected: false,
+        address: null,
+        error: error.message
+      }));
+    }
+  };
+
+  // Initialize wallet connection
+  useEffect(() => {
+    const initializeWallet = async () => {
+      try {
+        await checkWalletLink();
+        await checkWalletConnection();
+      } catch (error) {
+        console.error('Wallet initialization error:', error);
+      }
+    };
+
+    initializeWallet();
+  }, []);
+
+  // Register public key
+  const handleRegisterKey = async (publicKeyData) => {
+    try {
+      setLoading(true);
+      const result = await registerPublicKey(publicKeyData);
+      
+      if (result && result.success) {  // Add null check
+        setPublicKey(publicKeyData);
+      } else {
+        throw new Error(result?.error || 'Failed to register key');
+      }
+    } catch (error) {
+      console.error('Error registering key:', error);
+      setError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle connect wallet
   const handleConnectWallet = async () => {
     try {
       await suggestChain();
       const result = await connectKeplr();
       
-      if (result.success) {
+      if (result && result.success) {  // Add null check
+        const client = await getSigningClient();
         setWalletStatus({
           connected: true,
-          address: result.data.address,
+          address: client?.address,  // Optional chaining
           error: null
         });
-
-        // Store the wallet link
-        if (session?.handle) {
-          const linkResult = await storeWalletLink(session.handle, result.data.address);
-          if (linkResult.success) {
-            setWalletLink({
-              handle: session.handle,
-              walletAddress: result.data.address
-            });
-          }
-        }
       } else {
         setWalletStatus(prev => ({
           ...prev,
-          error: result.error
+          error: result?.error || 'Failed to connect'
         }));
       }
     } catch (error) {
+      console.error('Connect wallet error:', error);
       setWalletStatus(prev => ({
         ...prev,
         error: error.message
@@ -156,6 +233,7 @@ export default function Apps() {
     }
   };
 
+ 
   const handleDisconnectWallet = async () => {
     try {
       await removeWalletLink();
@@ -175,6 +253,43 @@ export default function Apps() {
     }
   };
 
+  
+  // Initialize wallet connection
+  useEffect(() => {
+    const initializeWallet = async () => {
+      try {
+        const client = await getSigningClient();
+        const address = await client.getAddress();
+        
+        setWalletStatus({
+          connected: true,
+          address,
+          error: null
+        });
+
+        // Check if public key is already registered
+        const keyData = await getPublicKey(address);
+        if (keyData.success) {
+          setPublicKey(keyData.publicKey);
+        }
+      } catch (error) {
+        console.error('Wallet initialization error:', error);
+        setWalletStatus({
+          connected: false,
+          address: null,
+          error: error.message
+        });
+      }
+    };
+
+    initializeWallet();
+  }, []);
+
+  
+
+  
+
+  
   const handleAppClick = (app) => {
     if (!walletStatus.connected) {
       handleConnectWallet();
