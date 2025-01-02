@@ -188,96 +188,140 @@ export const initializeSignalProtocol = async (userId) => {
 //   };
 
 export const getPublicKeyData = async (username) => {
+  try {
+    const response = await getPublicKeyFromRegistry(username);
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to retrieve public key');
+    }
+
+    // The public key is already base64 encoded from the contract
+    const publicKeyBase64 = response.publicKey;
+    
     try {
-        const response = await getPublicKeyFromRegistry(username);
-        if (!response.success) {
-          throw new Error(response.error || 'Failed to retrieve public key');
-        }
-    
-        const publicKeyData = response.publicKey;
-    
-        // Parse the public key data as needed for your encryption library
-        const parsedData = JSON.parse(publicKeyData);
-    
-        return parsedData;
+      // First decode the base64 string
+      const decodedString = atob(publicKeyBase64);
+      // Then parse the JSON
+      const parsedData = JSON.parse(decodedString);
+      
+      console.log('Retrieved public key data:', {
+        username,
+        rawKey: publicKeyBase64,
+        decoded: decodedString,
+        parsed: parsedData
+      });
+
+      return parsedData;
+    } catch (parseError) {
+      console.error('Error parsing public key:', parseError);
+      console.log('Raw public key:', publicKeyBase64);
+      throw new Error('Invalid public key format');
+    }
   } catch (error) {
     console.error("Error getting public key:", error);
     return null;
   }
 };
 
-export const encryptMessage = async (message, recipientKey) => {
+// Encryption function
+export const encryptMessage = async (message, recipientPublicKey) => {
   try {
-    const registrationId = recipientKey.registrationId
-      ? recipientKey.registrationId.toString()
-      : null;
+    // Generate a random 256-bit (32 bytes) key for AES-256-GCM
+    const encryptionKey = await crypto.subtle.generateKey(
+      {
+        name: "AES-GCM",
+        length: 256  // Explicitly set to 256 bits
+      },
+      true,
+      ["encrypt"]
+    );
 
-    if (!registrationId) {
-      throw new Error("Invalid recipient key: registrationId is missing");
-    }
+    // Generate a random 12-byte IV
+    const iv = crypto.getRandomValues(new Uint8Array(12));
 
-    const address = new SignalProtocol.SignalProtocolAddress(registrationId, 1);
-    const sessionBuilder = new SignalProtocol.SessionBuilder(store, address);
-    await sessionBuilder.processPreKey(recipientKey);
-    const sessionCipher = new SignalProtocol.SessionCipher(store, address);
-    const plaintext = new TextEncoder().encode(message).buffer;
-    const ciphertext = await sessionCipher.encrypt(plaintext);
+    // Encrypt the message
+    const encoder = new TextEncoder();
+    const ciphertext = await crypto.subtle.encrypt(
+      {
+        name: "AES-GCM",
+        iv: iv
+      },
+      encryptionKey,
+      encoder.encode(message)
+    );
+
+    // Export the encryption key
+    const rawKey = await crypto.subtle.exportKey('raw', encryptionKey);
+
+    // Combine key + IV + ciphertext
+    const combined = new Uint8Array(rawKey.byteLength + iv.byteLength + ciphertext.byteLength);
+    combined.set(new Uint8Array(rawKey), 0);
+    combined.set(iv, rawKey.byteLength);
+    combined.set(new Uint8Array(ciphertext), rawKey.byteLength + iv.byteLength);
+
+    // Convert to base64
+    const encryptedBase64 = btoa(String.fromCharCode.apply(null, combined));
 
     return {
       success: true,
-      data: btoa(
-        JSON.stringify({
-          type: ciphertext.type,
-          body: Array.from(new Uint8Array(ciphertext.body)),
-        })
-      ),
+      data: encryptedBase64
     };
   } catch (error) {
     console.error("Encryption error:", error);
     return {
       success: false,
-      error: error.message,
+      error: error.message
     };
   }
 };
 
-export const decryptMessage = async (encryptedMessage, senderKey) => {
+// Decryption function
+export const decryptMessage = async (encryptedData) => {
   try {
-    const address = new SignalProtocol.SignalProtocolAddress(
-      senderKey.registrationId.toString(),
-      1
-    );
-    const sessionCipher = new SignalProtocol.SessionCipher(store, address);
-    const { type, body } = JSON.parse(atob(encryptedMessage));
+    // Decode base64
+    const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
 
-    let plaintext;
-    if (type === 3) {
-      // PreKeyWhisperMessage
-      plaintext = await sessionCipher.decryptPreKeyWhisperMessage(
-        new Uint8Array(body).buffer,
-        "binary"
-      );
-    } else if (type === 1) {
-      // WhisperMessage
-      plaintext = await sessionCipher.decryptWhisperMessage(
-        new Uint8Array(body).buffer,
-        "binary"
-      );
-    } else {
-      throw new Error("Unknown message type");
-    }
+    // Split the combined data
+    const rawKey = combined.slice(0, 32); // 256-bit key = 32 bytes
+    const iv = combined.slice(32, 44); // 12 bytes IV
+    const ciphertext = combined.slice(44); // Rest is ciphertext
+
+    // Import the encryption key
+    const decryptionKey = await crypto.subtle.importKey(
+      'raw',
+      rawKey,
+      {
+        name: 'AES-GCM',
+        length: 256  // Explicitly set to 256 bits
+      },
+      false,
+      ['decrypt']
+    );
+
+    // Decrypt
+    const decrypted = await crypto.subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: iv
+      },
+      decryptionKey,
+      ciphertext
+    );
+
+    // Decode the result
+    const decoder = new TextDecoder();
     return {
       success: true,
-      data: new TextDecoder().decode(new Uint8Array(plaintext)),
+      data: decoder.decode(decrypted)
     };
   } catch (error) {
-    console.error("Decryption error:", error);
+    console.error('Message decryption error:', error);
     return {
       success: false,
-      error: error.message,
+      error: 'Failed to decrypt message'
     };
   }
 };
+
 export const hasStoredKeys = (session) => {
   try {
     const publicKeyData = localStorage.getItem(
@@ -337,85 +381,69 @@ export const generateAndStoreKeyPair = async (handle) => {
     };
   }
 };
-// Store key pair with encryption
-export const storeKeyPair = async (session) => {
-    const registrationId = localStorage.getItem(`${KEY_STORAGE_PREFIX}registrationId`);
 
-
+// Key storage functions
+export const storeKeyPair = async (keyPair) => {
   try {
-
-    // Generate ECDH keypair
-    const keyPair = await crypto.subtle.generateKey(
-      {
-        name: "ECDH",
-        namedCurve: "P-256",
-      },
-      true, // extractable
-      ["deriveKey", "deriveBits"]
-    );
-    // Export keys to JWK format
-    // Export keys
-    const publicKey = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
-    const privateKey = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
-    // Store key data
-    const keyData = {
-      version: KEY_VERSION,
-      created: Date.now(),
-      publicKey,
-      privateKey,
-      registrationId: registrationId ? parseInt(registrationId, 10) : null,
-
-    };
-    localStorage.setItem(
-      `${KEY_STORAGE_PREFIX}${session.handle}_publicKey`,
-      JSON.stringify(keyData.publicKey)
-    );
-    return {
-      success: true,
-      publicKey,
-    };
+    // Export private key to JWK format
+    const privateKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
+    const publicKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+    
+    // Store both keys
+    localStorage.setItem('cycl3_private_key', JSON.stringify(privateKeyJwk));
+    localStorage.setItem('cycl3_public_key', JSON.stringify(publicKeyJwk));
+    
+    return { success: true };
   } catch (error) {
-    console.error("Key generation error:", error);
-    return {
-      success: false,
-      error: "Failed to generate encryption keys",
-    };
+    console.error('Error storing keypair:', error);
+    return { success: false, error: error.message };
   }
 };
-// Get stored key pair
+
 export const getStoredKeyPair = async () => {
   try {
-    const storedData = localStorage.getItem(`${KEY_STORAGE_PREFIX}keypair`);
-    if (!storedData) {
-      throw new Error("No encryption keys found");
+    // Get stored keys
+    const privateKeyStr = localStorage.getItem('cycl3_private_key');
+    const publicKeyStr = localStorage.getItem('cycl3_public_key');
+    
+    if (!privateKeyStr || !publicKeyStr) {
+      throw new Error('No encryption keys found');
     }
-    const { publicKey: publicKeyJwk, privateKey: privateKeyJwk } =
-      JSON.parse(storedData);
-    // Import keys
+
+    // Parse stored keys
+    const privateKeyJwk = JSON.parse(privateKeyStr);
+    const publicKeyJwk = JSON.parse(publicKeyStr);
+
+    // Import keys back to CryptoKey format
+    const privateKey = await crypto.subtle.importKey(
+      'jwk',
+      privateKeyJwk,
+      {
+        name: 'ECDH',
+        namedCurve: 'P-256'
+      },
+      true,
+      ['deriveKey', 'deriveBits']
+    );
+
     const publicKey = await crypto.subtle.importKey(
-      "jwk",
+      'jwk',
       publicKeyJwk,
-      KEY_ALGORITHM,
+      {
+        name: 'ECDH',
+        namedCurve: 'P-256'
+      },
       true,
       []
     );
-    const privateKey = await crypto.subtle.importKey(
-      "jwk",
-      privateKeyJwk,
-      KEY_ALGORITHM,
-      true,
-      ["deriveKey", "deriveBits"]
-    );
+
     return {
       success: true,
-      publicKey,
       privateKey,
+      publicKey
     };
   } catch (error) {
-    console.error("Key retrieval error:", error);
-    return {
-      success: false,
-      error: "Failed to retrieve encryption keys",
-    };
+    console.error('Key retrieval error:', error);
+    return { success: false, error: error.message };
   }
 };

@@ -14,6 +14,33 @@ export default function Profile() {
 
   
 
+
+  const initializeKeys = async () => {
+    try {
+      const keyPair = await crypto.subtle.generateKey(
+        {
+          name: 'ECDH',
+          namedCurve: 'P-256'
+        },
+        true,
+        ['deriveKey', 'deriveBits']
+      );
+  
+      // Store the keys
+      await storeKeyPair(keyPair);
+      
+      // Export public key for display
+      const publicKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+      setPublicKey(publicKeyJwk);
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Key generation error:', error);
+      return { success: false, error: error.message };
+    }
+  };
+
+  
   const loadProfile = async () => {
     try {
       const response = await getMyProfile();

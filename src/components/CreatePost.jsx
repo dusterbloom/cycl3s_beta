@@ -52,48 +52,72 @@ export default function CreatePost() {
     }
   };
 
+  // const selectRecipient = async (user) => {
+  //   try {
+  //     setLoading(true);
+  //     setError("");
+
+  //     // Verify recipient's public key availability
+  //     const recipientPublicKey = await getPublicKeyData(user.handle);
+  //     if (!recipientPublicKey) {
+  //       throw new Error(`${user.handle} hasn't set up encryption keys yet`);
+  //     }
+
+    
+  //     setRecipient({
+  //       handle: user.handle,
+  //       displayName: user.displayName,
+  //       publicKey: response,
+  //     });
+
+  //         // Store recipient's public key in localStorage
+  //   // localStorage.setItem(`cycl3_keys_recipient_${user.handle}`, JSON.stringify(recipientPublicKey));
+
+  //     setShowUserSearch(false);
+  //     setSearchResults([]);
+  //     setSearchInput(""); // Clear search input after selection
+  //   } catch (error) {
+  //     console.error("Recipient validation error:", error);
+  //     setError(error.message);
+  //     setRecipient(null); // Clear recipient on error
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+  
   const selectRecipient = async (user) => {
     try {
       setLoading(true);
       setError("");
-
+  
       // Verify recipient's public key availability
       const recipientPublicKey = await getPublicKeyData(user.handle);
       if (!recipientPublicKey) {
         throw new Error(`${user.handle} hasn't set up encryption keys yet`);
       }
-
-    
+  
+      // Store the recipient with their public key
       setRecipient({
         handle: user.handle,
         displayName: user.displayName,
-        publicKey: response,
+        publicKey: recipientPublicKey  // Store the actual public key
       });
-
-          // Store recipient's public key in localStorage
-    // localStorage.setItem(`cycl3_keys_recipient_${user.handle}`, JSON.stringify(recipientPublicKey));
-
+  
       setShowUserSearch(false);
       setSearchResults([]);
-      setSearchInput(""); // Clear search input after selection
+      setSearchInput("");
     } catch (error) {
       console.error("Recipient validation error:", error);
       setError(error.message);
-      setRecipient(null); // Clear recipient on error
+      setRecipient(null);
     } finally {
       setLoading(false);
     }
   };
   
-  
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!content.trim()) return;
-  
-    if (!session || !session.handle) {
-      setError("User session is invalid. Please log in again.");
-      return;
-    }
   
     setLoading(true);
     setError("");
@@ -106,16 +130,18 @@ export default function CreatePost() {
           throw new Error("Please select a valid recipient for encrypted message");
         }
   
-        const recipientHandle = recipient.handle;
-        const recipientPublicKey = JSON.parse(
-          localStorage.getItem(`cycl3_keys_recipient_${recipientHandle}`)
-        );
-  
-        if (!recipientPublicKey) {
-          throw new Error(`${recipient.handle} hasn't set up encryption keys yet`);
+        // Make sure we have the recipient's public key
+        if (!recipient.publicKey) {
+          const recipientPublicKey = await getPublicKeyData(recipient.handle);
+          if (!recipientPublicKey) {
+            throw new Error(`${recipient.handle} hasn't set up encryption keys yet`);
+          }
+          recipient.publicKey = recipientPublicKey;
         }
   
-        const encrypted = await encryptMessage(content, recipientPublicKey);
+        console.log('Encrypting message with recipient key:', recipient.publicKey);
+  
+        const encrypted = await encryptMessage(content, recipient.publicKey);
         if (!encrypted.success) {
           throw new Error(encrypted.error || "Encryption failed");
         }
@@ -126,7 +152,8 @@ export default function CreatePost() {
       const response = await createPost(postContent);
       if (response.success) {
         setContent("");
-        if (onPostCreated) onPostCreated();
+        setRecipient(null);  // Clear recipient after successful post
+        setIsEncrypted(false);  // Reset encryption state
       } else {
         throw new Error(response.error || "Failed to create post");
       }
@@ -137,7 +164,6 @@ export default function CreatePost() {
       setLoading(false);
     }
   };
-
   return (
     <form onSubmit={handleSubmit} className="create-post">
       <div className="create-post-header">

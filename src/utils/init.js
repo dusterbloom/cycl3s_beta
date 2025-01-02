@@ -1,62 +1,41 @@
-// In a separate utility file or service
-import { hasStoredKeys, storeKeyPair, getPublicKeyData } from '../services/signalEncryption';
-import { registerPublicKey } from '../services/wallet';
+import { getPublicKeyData, storeKeyPair } from '../services/signalEncryption';
+
 
 export const initializeKeys = async (session, setPublicKey, setError) => {
-  // try {
-  //   console.log("Checking stored keys:", hasStoredKeys(session));
-  //   let publicKey = null;
-
-  //   // Check if the session object is valid
-  //   if (!session || !session.handle) {
-  //     throw new Error("Invalid session object");
-  //   }
-
-  //   if (!hasStoredKeys(session)) {
-  //     console.log("No keys found, generating new pair");
-  //     const { success, publicKey: newPublicKey } = await storeKeyPair(session);
-  //     if (!success) {
-  //       throw new Error("Failed to generate encryption keys");
-  //     }
-  //     publicKey = newPublicKey;
-  //   } else {
-  //     publicKey = await getPublicKeyData(session.handle);
-  //   }
-  //   // Register public key in ArchID Registry
-  //   const registrationResult = await registerPublicKey(session.handle, publicKey);
-  //   if (!registrationResult.success) {
-  //     throw new Error(registrationResult.error);
-  //   }
-
-
-  //   console.log('Public key loaded:', publicKey);
-  //   setPublicKey(publicKey);
-  // } catch (error) {
-  //   console.error('Key initialization error:', error);
-  //   setError(error.message);
-  // }
-
   try {
-    // First ensure we have a connected wallet
-    const { success: keplrConnected } = await connectKeplr();
-    if (!keplrConnected) {
-      throw new Error("Failed to connect to wallet");
+    if (!session?.handle) {
+      throw new Error('User must be logged in to initialize keys');
     }
 
-    // Get the public key for this handle
-    const publicKeyData = await getPublicKeyData(session.handle);
-    
-    if (!publicKeyData) {
-      // If no public key exists, generate and register one
-      const { publicKey } = await generateKeyPair(); // Your key generation function
-      await registerPublicKey(session.handle, publicKey);
-      return publicKey;
+    // Check for existing keys
+    const existingKeys = localStorage.getItem('cycl3_private_key');
+    if (existingKeys) {
+      const publicKey = await getPublicKeyData(session.handle);
+      setPublicKey(publicKey);
+      return { success: true };
     }
 
-    return publicKeyData;
+    // Generate new ECDH key pair
+    const keyPair = await crypto.subtle.generateKey(
+      {
+        name: 'ECDH',
+        namedCurve: 'P-256'
+      },
+      true,
+      ['deriveKey', 'deriveBits']
+    );
+
+    // Store the keys
+    await storeKeyPair(keyPair);
+
+    // Export public key for display
+    const publicKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+    setPublicKey(publicKeyJwk);
+
+    return { success: true };
   } catch (error) {
     console.error('Key initialization error:', error);
-    throw error;
+    setError('Failed to initialize encryption keys');
+    return { success: false, error: error.message };
   }
 };
-

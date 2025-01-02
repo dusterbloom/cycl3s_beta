@@ -36,53 +36,50 @@ export default function EncryptedPost({ post }) {
     isRecipient: isRecipient(),
   });
 
-
   const handleDecrypt = async () => {
-
-  setLoading(true);
-  setError(null);
-  try {
-    if (!hasStoredKeys()) {
-      throw new Error("Encryption keys not found. Please refresh the page.");
-    }
-    // Extract encrypted data from post
-    const match = post.record.text.match(
-      /🔒 @([a-zA-Z0-9.-]+) #e2e ([A-Za-z0-9+/\-_]+)/
-    );
-    if (!match) {
-      throw new Error("Invalid encrypted message format");
-    }
-    const [, recipientHandle, encryptedData] = match;
-    
-    // Verify recipient
-    if (recipientHandle.toLowerCase() !== session?.handle.toLowerCase()) {
-      throw new Error("This message is not encrypted for you");
-    }
-     // Get sender's public key
-    const senderPublicKey = await getPublicKeyData(post.author.handle);
-    if (!senderPublicKey) {
-      throw new Error("Unable to retrieve sender's encryption key");
-    }
-     // Log for debugging
-    console.log("Decryption attempt:", {
-      senderPublicKey,
-      encryptedData
-    });
-     const decrypted = await decryptMessage(encryptedData, senderPublicKey);
-    if (decrypted.success) {
+    setLoading(true);
+    setError(null);
+    try {
+      // Extract encrypted data from post
+      const match = post.record.text.match(
+        /🔒 @([a-zA-Z0-9.-]+) #e2e ([A-Za-z0-9+/\-_=]+)/  // Added = to base64 chars
+      );
+      if (!match) {
+        throw new Error("Invalid encrypted message format");
+      }
+      const [, recipientHandle, encryptedData] = match;
+      
+      // Verify recipient
+      if (recipientHandle.toLowerCase() !== session?.handle.toLowerCase()) {
+        throw new Error("This message is not encrypted for you");
+      }
+  
+      // Get sender's public key
+      const senderPublicKey = await getPublicKeyData(post.author.handle);
+      if (!senderPublicKey) {
+        throw new Error("Unable to retrieve sender's encryption key");
+      }
+  
+      console.log("Decryption attempt:", {
+        sender: post.author.handle,
+        recipient: recipientHandle,
+        senderPublicKey,
+        encryptedData
+      });
+  
+      const decrypted = await decryptMessage(encryptedData, senderPublicKey);
+      if (!decrypted.success) {
+        throw new Error(decrypted.error || "Unable to decrypt message");
+      }
+  
       setDecryptedContent(decrypted.data);
-    } else {
-      throw new Error(decrypted.error || "Unable to decrypt message");
+    } catch (error) {
+      console.error("Decryption error:", error);
+      setError(error.message);
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error("Decryption error:", error);
-    setError(error.message);
-  } finally {
-    setLoading(false);
-  }
- ;
-}
-
+  };
 
   return (
     <div className="encrypted-post">
