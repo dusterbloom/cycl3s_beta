@@ -10,6 +10,7 @@ import { Link } from "react-router-dom";
 import CreatePost from "./CreatePost";
 import EncryptedPost from "./EncryptedPost";
 
+
 export default function Feed() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);

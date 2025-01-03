@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
   hasStoredKeys,
@@ -35,6 +35,14 @@ export default function EncryptedPost({ post }) {
     recipientHandle: getRecipientHandle(),
     isRecipient: isRecipient(),
   });
+
+    // // Auto-decrypt on mount
+    // useEffect(() => {
+    //   if (isRecipient() && !decryptedContent && !error) {
+    //     handleDecrypt();
+    //   }
+    // }, [post.uri]); // Add post.uri as dependency to handle conversation changes
+  
 
   const handleDecrypt = async () => {
     setLoading(true);
