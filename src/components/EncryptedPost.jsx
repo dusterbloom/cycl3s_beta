@@ -43,6 +43,11 @@ export default function EncryptedPost({ post }) {
     //   }
     // }, [post.uri]); // Add post.uri as dependency to handle conversation changes
   
+  // Check if the current user is the recipient or sender
+  const canDecrypt = () => {
+    const recipientHandle = getRecipientHandle();
+    return recipientHandle === session?.handle || post.author.handle === session?.handle;
+  };
 
   const handleDecrypt = async () => {
     setLoading(true);
@@ -57,10 +62,10 @@ export default function EncryptedPost({ post }) {
       }
       const [, recipientHandle, encryptedData] = match;
       
-      // Verify recipient
-      if (recipientHandle.toLowerCase() !== session?.handle.toLowerCase()) {
-        throw new Error("This message is not encrypted for you");
-      }
+      // // Verify recipient
+      // if (recipientHandle.toLowerCase() !== session?.handle.toLowerCase()) {
+      //   throw new Error("This message is not encrypted for you");
+      // }
   
       // Get sender's public key
       const senderPublicKey = await getPublicKeyData(post.author.handle);
@@ -99,12 +104,16 @@ export default function EncryptedPost({ post }) {
           </span>
         )}
       </div>
-
+  
       {!decryptedContent && !error && (
         <div className="encrypted-content-locked">
-          {isRecipient() ? (
+          {canDecrypt() ? (
             <>
-              <p>This message is encrypted for you.</p>
+              <p>
+                {post.author.handle === session?.handle 
+                  ? "You sent this encrypted message"
+                  : "This message is encrypted for you"}
+              </p>
               <button
                 className="btn btn-primary"
                 onClick={handleDecrypt}
@@ -127,4 +136,4 @@ export default function EncryptedPost({ post }) {
     </div>
   );
 
-}
+};
