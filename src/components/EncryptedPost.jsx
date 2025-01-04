@@ -3,10 +3,9 @@ import { useAuth } from "../context/AuthContext";
 import {
   hasStoredKeys as hasKeys,
   getPublicKeyData,
-  decryptMessage
+  decryptMessage,
 } from "../services/signalEncryption"; // Add this import
-import KeySetup from './KeySetup';
-
+import KeySetup from "./KeySetup";
 
 export default function EncryptedPost({ post }) {
   const { session } = useAuth();
@@ -41,9 +40,11 @@ export default function EncryptedPost({ post }) {
 
   const canDecrypt = () => {
     const recipientHandle = getRecipientHandle();
-    return recipientHandle === session?.handle || post.author.handle === session?.handle;
+    return (
+      recipientHandle === session?.handle ||
+      post.author.handle === session?.handle
+    );
   };
-
 
   // Handle decrypt button click
   const handleDecryptClick = () => {
@@ -66,36 +67,36 @@ export default function EncryptedPost({ post }) {
     try {
       // Extract encrypted data from post
       const match = post.record.text.match(
-        /🔒 @([a-zA-Z0-9.-]+) #e2e ([A-Za-z0-9+/\-_=]+)/  // Added = to base64 chars
+        /🔒 @([a-zA-Z0-9.-]+) #e2e ([A-Za-z0-9+/\-_=]+)/ // Added = to base64 chars
       );
       if (!match) {
         throw new Error("Invalid encrypted message format");
       }
       const [, recipientHandle, encryptedData] = match;
-      
+
       // // Verify recipient
       // if (recipientHandle.toLowerCase() !== session?.handle.toLowerCase()) {
       //   throw new Error("This message is not encrypted for you");
       // }
-  
+
       // Get sender's public key
       const senderPublicKey = await getPublicKeyData(post.author.handle);
       if (!senderPublicKey) {
         throw new Error("Unable to retrieve sender's encryption key");
       }
-  
+
       // console.log("Decryption attempt:", {
       //   sender: post.author.handle,
       //   recipient: recipientHandle,
       //   senderPublicKey,
       //   encryptedData
       // });
-  
+
       const decrypted = await decryptMessage(encryptedData, senderPublicKey);
       if (!decrypted.success) {
         throw new Error(decrypted.error || "Unable to decrypt message");
       }
-  
+
       setDecryptedContent(decrypted.data);
     } catch (error) {
       console.error("Decryption error:", error);
@@ -125,7 +126,7 @@ export default function EncryptedPost({ post }) {
               {canDecrypt() ? (
                 <>
                   <p>
-                    {post.author.handle === session?.handle 
+                    {post.author.handle === session?.handle
                       ? "You sent this encrypted message"
                       : "This message is encrypted for you"}
                   </p>

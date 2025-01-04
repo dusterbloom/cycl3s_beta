@@ -1,58 +1,85 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { createPost } from '../services/bluesky';
-import { searchUsers } from '../services/bluesky';
-import { encryptMessage, hasStoredKeys as hasKeys, getPublicKeyData } from '../services/signalEncryption';
-import KeySetup from './KeySetup';
+import React, { useState, useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
+import { createPost } from "../services/bluesky";
+import { searchUsers } from "../services/bluesky";
+import {
+  encryptMessage,
+  hasStoredKeys as hasKeys,
+  getPublicKeyData,
+} from "../services/signalEncryption";
+import KeySetup from "./KeySetup";
 
 export default function CreatePost({ onPostCreated }) {
-  const { session, isLoading } = useAuth();
-  const [content, setContent] = useState('');
+  const { session, isLoading, validateSession } = useAuth(); // Add validateSession here
+  const [content, setContent] = useState("");
   const [isEncrypted, setIsEncrypted] = useState(false);
   const [recipient, setRecipient] = useState(null);
   const [searchResults, setSearchResults] = useState([]);
   const [showUserSearch, setShowUserSearch] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [searchInput, setSearchInput] = useState('');
+  const [searchInput, setSearchInput] = useState("");
   const [needsKeySetup, setNeedsKeySetup] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
 
   // Check if keys are set up
+  // Update the useEffect hook for checking keys
   useEffect(() => {
     const checkKeys = async () => {
-   
       setIsChecking(true);
       try {
-        const hasKeys = await hasStoredKeys(session);
-        setNeedsKeySetup(!hasKeys);
+        if (!session?.handle) {
+          console.log("No session handle available:", session);
+          setNeedsKeySetup(true);
+          return;
+        }
+
+        // First check if user is registered in contract
+        const publicKeyResult = await getPublicKey(session.handle);
+        console.log("Public key check result:", publicKeyResult);
+
+        if (!publicKeyResult?.success) {
+          setNeedsKeySetup(true);
+          return;
+        }
+
+        const hasLocalKeys = await hasStoredKeys(session.handle);
+        setNeedsKeySetup(!hasLocalKeys);
       } catch (error) {
-        console.error('Error checking keys:', error);
+        console.error("Error checking keys:", error);
         setNeedsKeySetup(true);
       } finally {
         setIsChecking(false);
       }
     };
 
-    checkKeys();
-  }, [session?.user?.handle, isLoading]);
+    if (session?.handle) {
+      checkKeys();
+    }
+  }, [session]);
 
-  if (isLoading || isChecking) {
-    return <div>Loading...</div>;
-  }
+  // Add session persistence check
+  useEffect(() => {
+    if (!session?.handle) {
+      console.log("Session lost or not initialized");
+      setError("Please log in again");
+      return;
+    }
+  }, [session]);
 
   // Handle encryption toggle
   const handleEncryptionToggle = async () => {
-    if (!session?.user?.handle) {
-      console.log('No user handle available');
+    if (!session?.handle) {
+      console.log("No user handle available");
       return;
     }
-    
-    const hasKeys = await hasStoredKeys({
-      handle: session.user.handle
+
+    // Use hasKeys instead of hasStoredKeys
+    const hasLocalKeys = await hasKeys({
+      handle: session.handle,
     });
-    
-    if (!hasKeys) {
+
+    if (!hasLocalKeys) {
       setNeedsKeySetup(true);
       return;
     }
@@ -81,25 +108,24 @@ export default function CreatePost({ onPostCreated }) {
     }
   };
 
-  
   const selectRecipient = async (user) => {
     try {
       setLoading(true);
       setError("");
-  
+
       // Verify recipient's public key availability
       const recipientPublicKey = await getPublicKeyData(user.handle);
       if (!recipientPublicKey) {
         throw new Error(`${user.handle} hasn't set up encryption keys yet`);
       }
-  
+
       // Store the recipient with their public key
       setRecipient({
         handle: user.handle,
         displayName: user.displayName,
-        publicKey: recipientPublicKey  // Store the actual public key
+        publicKey: recipientPublicKey, // Store the actual public key
       });
-  
+
       setShowUserSearch(false);
       setSearchResults([]);
       setSearchInput("");
@@ -111,46 +137,57 @@ export default function CreatePost({ onPostCreated }) {
       setLoading(false);
     }
   };
-  
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!content.trim()) return;
-  
+
     setLoading(true);
     setError("");
-  
+
     try {
+      // Validate session before proceeding
+      if (!session?.handle) {
+        throw new Error("Session invalid - please log in again");
+      }
+
       let postContent = content;
-  
       if (isEncrypted) {
         if (!recipient?.handle) {
-          throw new Error("Please select a valid recipient for encrypted message");
+          throw new Error(
+            "Please select a valid recipient for encrypted message"
+          );
         }
-  
+
         // Make sure we have the recipient's public key
         if (!recipient.publicKey) {
           const recipientPublicKey = await getPublicKeyData(recipient.handle);
           if (!recipientPublicKey) {
-            throw new Error(`${recipient.handle} hasn't set up encryption keys yet`);
+            throw new Error(
+              `${recipient.handle} hasn't set up encryption keys yet`
+            );
           }
           recipient.publicKey = recipientPublicKey;
         }
-  
-        console.log('Encrypting message with recipient key:', recipient.publicKey);
-  
+
+        console.log(
+          "Encrypting message with recipient key:",
+          recipient.publicKey
+        );
+
         const encrypted = await encryptMessage(content, recipient.publicKey);
         if (!encrypted.success) {
           throw new Error(encrypted.error || "Encryption failed");
         }
-  
+
         postContent = `🔒 @${recipient.handle} #e2e ${encrypted.data}`;
       }
-  
+
       const response = await createPost(postContent);
       if (response.success) {
         setContent("");
-        setRecipient(null);  // Clear recipient after successful post
-        setIsEncrypted(false);  // Reset encryption state
+        setRecipient(null); // Clear recipient after successful post
+        setIsEncrypted(false); // Reset encryption state
       } else {
         throw new Error(response.error || "Failed to create post");
       }
@@ -163,106 +200,108 @@ export default function CreatePost({ onPostCreated }) {
   };
   return (
     <form onSubmit={handleSubmit} className="create-post">
-            {needsKeySetup ? (
+      {needsKeySetup ? (
         <KeySetup onComplete={handleKeySetupComplete} />
       ) : (
         <>
-      <div className="create-post-header">
-        <button
-          type="button"
-          className={`btn-icon ${isEncrypted ? "active" : ""}`}
-          // onClick={() => setIsEncrypted(!isEncrypted)}
-          onClick={handleEncryptionToggle}
+          <div className="create-post-header">
+            <button
+              type="button"
+              className={`btn-icon ${isEncrypted ? "active" : ""}`}
+              // onClick={() => setIsEncrypted(!isEncrypted)}
+              onClick={handleEncryptionToggle}
+              title={
+                isEncrypted
+                  ? "Switch to public post"
+                  : "Switch to encrypted post"
+              }
+            >
+              {isEncrypted ? "🔒" : "🌐"}
+            </button>
 
-          title={
-            isEncrypted ? "Switch to public post" : "Switch to encrypted post"
-          }
-        >
-          {isEncrypted ? "🔒" : "🌐"}
-        </button>
+            {isEncrypted && (
+              <div className="recipient-selector">
+                <input
+                  type="text"
+                  className="input recipient-input"
+                  placeholder="Search recipient..."
+                  value={searchInput}
+                  onChange={(e) => {
+                    setSearchInput(e.target.value);
+                    if (e.target.value.trim() === "") {
+                      setShowUserSearch(false);
+                      setSearchResults([]);
+                    } else {
+                      handleUserSearch(e.target.value);
+                      setShowUserSearch(true);
+                    }
+                  }}
+                  onFocus={() => setShowUserSearch(true)}
+                />
 
-        {isEncrypted && (
-          <div className="recipient-selector">
-            <input
-              type="text"
-              className="input recipient-input"
-              placeholder="Search recipient..."
-              value={searchInput}
-              onChange={(e) => {
-                setSearchInput(e.target.value);
-                if (e.target.value.trim() === "") {
-                  setShowUserSearch(false);
-                  setSearchResults([]);
-                } else {
-                  handleUserSearch(e.target.value);
-                  setShowUserSearch(true);
-                }
-              }}
-              onFocus={() => setShowUserSearch(true)}
-            />
-
-            {showUserSearch && searchResults.length > 0 && (
-              <div className="recipient-results">
-                {searchResults.map((user) => (
-                  <div
-                    key={user.did}
-                    className="recipient-result"
-                    onClick={() => selectRecipient(user)}
-                  >
-                    <span className="recipient-name">
-                      {user.displayName || `@${user.handle}`}
-                    </span>
-                    <span className="recipient-handle">@{user.handle}</span>
+                {showUserSearch && searchResults.length > 0 && (
+                  <div className="recipient-results">
+                    {searchResults.map((user) => (
+                      <div
+                        key={user.did}
+                        className="recipient-result"
+                        onClick={() => selectRecipient(user)}
+                      >
+                        <span className="recipient-name">
+                          {user.displayName || `@${user.handle}`}
+                        </span>
+                        <span className="recipient-handle">@{user.handle}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             )}
           </div>
-        )}
-      </div>
 
-      <div className="form-group">
-        <textarea
-          className="input post-input"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder={
-            isEncrypted ? "Write an encrypted message..." : "What's happening?"
-          }
-          style={{ minHeight: "100px", resize: "vertical" }}
-        />
-      </div>
+          <div className="form-group">
+            <textarea
+              className="input post-input"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder={
+                isEncrypted
+                  ? "Write an encrypted message..."
+                  : "What's happening?"
+              }
+              style={{ minHeight: "100px", resize: "vertical" }}
+            />
+          </div>
 
-      {error && (
-        <div className="error" style={{ marginBottom: "1rem" }}>
-          {error}
-        </div>
-      )}
-
-      {isEncrypted && (
-        <div className="encryption-info">
-          <span className="encryption-badge">🔒 End-to-End Encrypted</span>
-          {recipient?.handle && (
-            <span className="encryption-recipient">
-              to @{recipient.handle}
-              {recipient.displayName && ` (${recipient.displayName})`}
-            </span>
+          {error && (
+            <div className="error" style={{ marginBottom: "1rem" }}>
+              {error}
+            </div>
           )}
-        </div>
-      )}
 
-      <div className="create-post-actions">
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={loading || (isEncrypted && !recipient)}
-        >
-          {loading ? "Posting..." : "Post"}
-        </button>
-        </div>
+          {isEncrypted && (
+            <div className="encryption-info">
+              <span className="encryption-badge">🔒 End-to-End Encrypted</span>
+              {recipient?.handle && (
+                <span className="encryption-recipient">
+                  to @{recipient.handle}
+                  {recipient.displayName && ` (${recipient.displayName})`}
+                </span>
+              )}
+            </div>
+          )}
+
+          <div className="create-post-actions">
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={loading || (isEncrypted && !recipient)}
+            >
+              {loading ? "Posting..." : "Post"}
+            </button>
+          </div>
         </>
       )}
     </form>
   );
 }
-

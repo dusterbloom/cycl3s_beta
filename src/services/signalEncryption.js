@@ -1,6 +1,5 @@
 import * as SignalProtocol from "@privacyresearch/libsignal-protocol-typescript";
-import { getPublicKey as getPublicKeyFromRegistry } from './wallet';
-
+import { getPublicKey as getPublicKeyFromRegistry } from "./wallet";
 
 const KEY_VERSION = "1.0";
 const KEY_ALGORITHM = {
@@ -9,8 +8,6 @@ const KEY_ALGORITHM = {
 };
 
 const KEY_STORAGE_PREFIX = "cycl3_keys_";
-
-
 
 class SignalProtocolStore {
   constructor() {
@@ -23,7 +20,7 @@ class SignalProtocolStore {
   }
   async getLocalRegistrationId() {
     const id = localStorage.getItem(`${KEY_STORAGE_PREFIX}registrationId`);
-    return id ;
+    return id;
   }
   async loadIdentityKey(identifier) {
     const key = await this.getIdentityKeyPair();
@@ -54,8 +51,6 @@ class SignalProtocolStore {
     delete this.store[`session_${identifier}`];
   }
 
-
-
   async saveIdentity(identifier, identityKey) {
     this.trustedKeys[identifier] = identityKey;
   }
@@ -77,12 +72,12 @@ export const initializeSignalProtocol = async (userId) => {
     if (existingIdentityKey) {
       console.log("Using existing identity key");
       const registrationId = await store.getLocalRegistrationId();
-      
+
       // Get existing public key bundle from localStorage
       const existingBundle = localStorage.getItem(
         `${KEY_STORAGE_PREFIX}${userId}_publicKey`
       );
-      
+
       if (existingBundle) {
         publicKeyBundle = JSON.parse(existingBundle);
       } else {
@@ -92,12 +87,13 @@ export const initializeSignalProtocol = async (userId) => {
           identityPubKey: existingIdentityKey.pubKey,
           // You might want to regenerate these if needed
           signedPreKey: existingIdentityKey.signedPreKey,
-          preKey: existingIdentityKey.preKey
+          preKey: existingIdentityKey.preKey,
         };
       }
     } else {
       // Generate new keys
-      const identityKeyPair = await SignalProtocol.KeyHelper.generateIdentityKeyPair();
+      const identityKeyPair =
+        await SignalProtocol.KeyHelper.generateIdentityKeyPair();
       const registrationId = SignalProtocol.KeyHelper.generateRegistrationId();
       console.log("Generated new registration id:", registrationId);
 
@@ -109,7 +105,7 @@ export const initializeSignalProtocol = async (userId) => {
         identityKeyPair,
         signedPreKeyId
       );
-    
+
       // Store keys
       await store.storePreKey(preKeyId, preKey.keyPair);
       await store.storeSignedPreKey(signedPreKeyId, signedPreKey.keyPair);
@@ -162,12 +158,12 @@ export const initializeSignalProtocol = async (userId) => {
 //     try {
 //       console.log("Checking stored keys:", hasStoredKeys(session));
 //       let publicKey = null;
-  
+
 //       // Check if the session object is valid
 //       if (!session || !session.handle) {
 //         throw new Error("Invalid session object");
 //       }
-  
+
 //       if (!hasStoredKeys(session)) {
 //         console.log("No keys found, generating new pair");
 //         const { success, publicKey: newPublicKey } = await storeKeyPair(session);
@@ -178,7 +174,7 @@ export const initializeSignalProtocol = async (userId) => {
 //       } else {
 //         publicKey = await getPublicKeyData(session.handle);
 //       }
-  
+
 //       console.log('Public key loaded:', publicKey);
 //       setPublicKey(publicKey);
 //     } catch (error) {
@@ -187,25 +183,24 @@ export const initializeSignalProtocol = async (userId) => {
 //     }
 //   };
 
-
 export const getPublicKeyData = async (handle) => {
   try {
     if (!handle) {
-      console.log('No handle provided to getPublicKeyData');
+      console.log("No handle provided to getPublicKeyData");
       return null;
     }
 
-    console.log('Getting public key data for handle:', handle);
+    console.log("Getting public key data for handle:", handle);
     const response = await getPublicKeyFromRegistry(handle);
-    
+
     if (!response.success) {
-      console.log('No public key found in contract for handle:', handle);
+      console.log("No public key found in contract for handle:", handle);
       return null;
     }
 
     return {
       success: true,
-      publicKey: response.publicKey
+      publicKey: response.publicKey,
     };
   } catch (error) {
     console.error("Error getting public key:", error);
@@ -220,7 +215,7 @@ export const encryptMessage = async (message, recipientPublicKey) => {
     const encryptionKey = await crypto.subtle.generateKey(
       {
         name: "AES-GCM",
-        length: 256  // Explicitly set to 256 bits
+        length: 256, // Explicitly set to 256 bits
       },
       true,
       ["encrypt"]
@@ -234,17 +229,19 @@ export const encryptMessage = async (message, recipientPublicKey) => {
     const ciphertext = await crypto.subtle.encrypt(
       {
         name: "AES-GCM",
-        iv: iv
+        iv: iv,
       },
       encryptionKey,
       encoder.encode(message)
     );
 
     // Export the encryption key
-    const rawKey = await crypto.subtle.exportKey('raw', encryptionKey);
+    const rawKey = await crypto.subtle.exportKey("raw", encryptionKey);
 
     // Combine key + IV + ciphertext
-    const combined = new Uint8Array(rawKey.byteLength + iv.byteLength + ciphertext.byteLength);
+    const combined = new Uint8Array(
+      rawKey.byteLength + iv.byteLength + ciphertext.byteLength
+    );
     combined.set(new Uint8Array(rawKey), 0);
     combined.set(iv, rawKey.byteLength);
     combined.set(new Uint8Array(ciphertext), rawKey.byteLength + iv.byteLength);
@@ -254,13 +251,13 @@ export const encryptMessage = async (message, recipientPublicKey) => {
 
     return {
       success: true,
-      data: encryptedBase64
+      data: encryptedBase64,
     };
   } catch (error) {
     console.error("Encryption error:", error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 };
@@ -269,7 +266,9 @@ export const encryptMessage = async (message, recipientPublicKey) => {
 export const decryptMessage = async (encryptedData) => {
   try {
     // Decode base64
-    const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+    const combined = Uint8Array.from(atob(encryptedData), (c) =>
+      c.charCodeAt(0)
+    );
 
     // Split the combined data
     const rawKey = combined.slice(0, 32); // 256-bit key = 32 bytes
@@ -278,21 +277,21 @@ export const decryptMessage = async (encryptedData) => {
 
     // Import the encryption key
     const decryptionKey = await crypto.subtle.importKey(
-      'raw',
+      "raw",
       rawKey,
       {
-        name: 'AES-GCM',
-        length: 256  // Explicitly set to 256 bits
+        name: "AES-GCM",
+        length: 256, // Explicitly set to 256 bits
       },
       false,
-      ['decrypt']
+      ["decrypt"]
     );
 
     // Decrypt
     const decrypted = await crypto.subtle.decrypt(
       {
-        name: 'AES-GCM',
-        iv: iv
+        name: "AES-GCM",
+        iv: iv,
       },
       decryptionKey,
       ciphertext
@@ -302,13 +301,13 @@ export const decryptMessage = async (encryptedData) => {
     const decoder = new TextDecoder();
     return {
       success: true,
-      data: decoder.decode(decrypted)
+      data: decoder.decode(decrypted),
     };
   } catch (error) {
-    console.error('Message decryption error:', error);
+    console.error("Message decryption error:", error);
     return {
       success: false,
-      error: 'Failed to decrypt message'
+      error: "Failed to decrypt message",
     };
   }
 };
@@ -317,16 +316,16 @@ export const hasStoredKeys = async (session) => {
   try {
     // Wait for session to be fully loaded
     if (!session?.user?.handle) {
-      console.log('Session not fully loaded:', {
+      console.log("Session not fully loaded:", {
         session,
         user: session?.user,
-        handle: session?.user?.handle
+        handle: session?.user?.handle,
       });
       return false;
     }
 
     const handle = session.user.handle;
-    console.log('Checking stored keys for handle:', handle);
+    console.log("Checking stored keys for handle:", handle);
 
     // Check local storage first
     const localKeys = localStorage.getItem(
@@ -334,13 +333,13 @@ export const hasStoredKeys = async (session) => {
     );
 
     if (!localKeys) {
-      console.log('No local keys found for handle:', handle);
+      console.log("No local keys found for handle:", handle);
       return false;
     }
 
     // Only check contract if we have local keys
     const contractKeys = await queryPublicKey(handle);
-    console.log('Contract query response:', contractKeys);
+    console.log("Contract query response:", contractKeys);
 
     return contractKeys?.success;
   } catch (error) {
@@ -371,28 +370,31 @@ export const generateAndStoreKeyPair = async (handle) => {
       JSON.stringify({
         privateKey,
         created: Date.now(),
-        version: KEY_VERSION
+        version: KEY_VERSION,
       })
     );
 
     // Convert any BigInt values to strings before stringifying
-    const serializedPublicKey = Object.entries(publicKey).reduce((acc, [key, value]) => {
-      acc[key] = typeof value === 'bigint' ? value.toString() : value;
-      return acc;
-    }, {});
+    const serializedPublicKey = Object.entries(publicKey).reduce(
+      (acc, [key, value]) => {
+        acc[key] = typeof value === "bigint" ? value.toString() : value;
+        return acc;
+      },
+      {}
+    );
 
     // For the contract, send the serialized public key
     const publicKeyString = btoa(JSON.stringify(serializedPublicKey));
 
     return {
       success: true,
-      publicKey: publicKeyString
+      publicKey: publicKeyString,
     };
   } catch (error) {
     console.error("Key generation error:", error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
     };
   }
 };
@@ -401,16 +403,22 @@ export const generateAndStoreKeyPair = async (handle) => {
 export const storeKeyPair = async (keyPair) => {
   try {
     // Export private key to JWK format
-    const privateKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
-    const publicKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
-    
+    const privateKeyJwk = await crypto.subtle.exportKey(
+      "jwk",
+      keyPair.privateKey
+    );
+    const publicKeyJwk = await crypto.subtle.exportKey(
+      "jwk",
+      keyPair.publicKey
+    );
+
     // Store both keys
-    localStorage.setItem('cycl3_private_key', JSON.stringify(privateKeyJwk));
-    localStorage.setItem('cycl3_public_key', JSON.stringify(publicKeyJwk));
-    
+    localStorage.setItem("cycl3_private_key", JSON.stringify(privateKeyJwk));
+    localStorage.setItem("cycl3_public_key", JSON.stringify(publicKeyJwk));
+
     return { success: true };
   } catch (error) {
-    console.error('Error storing keypair:', error);
+    console.error("Error storing keypair:", error);
     return { success: false, error: error.message };
   }
 };
@@ -418,11 +426,11 @@ export const storeKeyPair = async (keyPair) => {
 export const getStoredKeyPair = async () => {
   try {
     // Get stored keys
-    const privateKeyStr = localStorage.getItem('cycl3_private_key');
-    const publicKeyStr = localStorage.getItem('cycl3_public_key');
-    
+    const privateKeyStr = localStorage.getItem("cycl3_private_key");
+    const publicKeyStr = localStorage.getItem("cycl3_public_key");
+
     if (!privateKeyStr || !publicKeyStr) {
-      throw new Error('No encryption keys found');
+      throw new Error("No encryption keys found");
     }
 
     // Parse stored keys
@@ -431,22 +439,22 @@ export const getStoredKeyPair = async () => {
 
     // Import keys back to CryptoKey format
     const privateKey = await crypto.subtle.importKey(
-      'jwk',
+      "jwk",
       privateKeyJwk,
       {
-        name: 'ECDH',
-        namedCurve: 'P-256'
+        name: "ECDH",
+        namedCurve: "P-256",
       },
       true,
-      ['deriveKey', 'deriveBits']
+      ["deriveKey", "deriveBits"]
     );
 
     const publicKey = await crypto.subtle.importKey(
-      'jwk',
+      "jwk",
       publicKeyJwk,
       {
-        name: 'ECDH',
-        namedCurve: 'P-256'
+        name: "ECDH",
+        namedCurve: "P-256",
       },
       true,
       []
@@ -455,10 +463,10 @@ export const getStoredKeyPair = async () => {
     return {
       success: true,
       privateKey,
-      publicKey
+      publicKey,
     };
   } catch (error) {
-    console.error('Key retrieval error:', error);
+    console.error("Key retrieval error:", error);
     return { success: false, error: error.message };
   }
 };
