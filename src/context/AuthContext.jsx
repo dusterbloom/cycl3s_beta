@@ -60,7 +60,25 @@ export const AuthProvider = ({ children }) => {
       };
     }
   };
-
+  // Add session validation method
+  const validateSession = () => {
+    const stored = localStorage.getItem("bluesky_session");
+    if (!stored) return false;
+    
+    try {
+      const sessionData = JSON.parse(stored);
+      if (!sessionData?.handle) return false;
+      
+      // If session doesn't match current, update it
+      if (JSON.stringify(sessionData) !== JSON.stringify(session)) {
+        setSession(sessionData);
+      }
+      return true;
+    } catch (error) {
+      console.error("Session validation error:", error);
+      return false;
+    }
+  };
   const logout = () => {
     setSession(null);
     localStorage.removeItem("bluesky_session");
@@ -71,7 +89,8 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     loading,
-    isAuthenticated: !!session,
+    isAuthenticated: !!session?.handle,
+    validateSession
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -9,8 +9,12 @@ import {
 } from "../services/signalEncryption";
 import KeySetup from "./KeySetup";
 
+import {
+  getPublicKey,
+} from "../services/wallet";
+
 export default function CreatePost({ onPostCreated }) {
-  const { session, isLoading, validateSession } = useAuth(); // Add validateSession here
+  const { session, isAuthenticated, validateSession } = useAuth();
   const [content, setContent] = useState("");
   const [isEncrypted, setIsEncrypted] = useState(false);
   const [recipient, setRecipient] = useState(null);
@@ -35,7 +39,7 @@ export default function CreatePost({ onPostCreated }) {
         }
 
         // First check if user is registered in contract
-        const publicKeyResult = await getPublicKey(session.handle);
+        const publicKeyResult = await getPublicKey(session.handle, session);
         console.log("Public key check result:", publicKeyResult);
 
         if (!publicKeyResult?.success) {

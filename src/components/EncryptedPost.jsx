@@ -8,7 +8,7 @@ import {
 import KeySetup from "./KeySetup";
 
 export default function EncryptedPost({ post }) {
-  const { session } = useAuth();
+  const { session, isAuthenticated, validateSession } = useAuth();
   const [decryptedContent, setDecryptedContent] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);

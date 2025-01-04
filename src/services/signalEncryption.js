@@ -1,5 +1,5 @@
 import * as SignalProtocol from "@privacyresearch/libsignal-protocol-typescript";
-import { getPublicKey as getPublicKeyFromRegistry } from "./wallet";
+import { getPublicKey  } from "./wallet";
 
 const KEY_VERSION = "1.0";
 const KEY_ALGORITHM = {
@@ -183,7 +183,7 @@ export const initializeSignalProtocol = async (userId) => {
 //     }
 //   };
 
-export const getPublicKeyData = async (handle) => {
+export const getPublicKeyData = async (handle, session) => {
   try {
     if (!handle) {
       console.log("No handle provided to getPublicKeyData");
@@ -191,7 +191,7 @@ export const getPublicKeyData = async (handle) => {
     }
 
     console.log("Getting public key data for handle:", handle);
-    const response = await getPublicKeyFromRegistry(handle);
+    const response = await getPublicKey(handle, session);
 
     if (!response.success) {
       console.log("No public key found in contract for handle:", handle);
@@ -315,16 +315,16 @@ export const decryptMessage = async (encryptedData) => {
 export const hasStoredKeys = async (session) => {
   try {
     // Wait for session to be fully loaded
-    if (!session?.user?.handle) {
+    if (!session?.handle) {
       console.log("Session not fully loaded:", {
         session,
         user: session?.user,
-        handle: session?.user?.handle,
+        handle: session?.handle,
       });
       return false;
     }
 
-    const handle = session.user.handle;
+    const handle = session.handle;
     console.log("Checking stored keys for handle:", handle);
 
     // Check local storage first
@@ -338,7 +338,7 @@ export const hasStoredKeys = async (session) => {
     }
 
     // Only check contract if we have local keys
-    const contractKeys = await queryPublicKey(handle);
+    const contractKeys = await getPublicKey(handle, session);
     console.log("Contract query response:", contractKeys);
 
     return contractKeys?.success;

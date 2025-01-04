@@ -11,7 +11,7 @@ import {
 } from "../services/wallet";
 
 export default function KeySetup({ onComplete }) {
-  const { session, isAuthenticated } = useAuth(); // Add isAuthenticated check
+  const { session, isAuthenticated, validateSession } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -19,8 +19,14 @@ export default function KeySetup({ onComplete }) {
   useEffect(() => {
     const checkExistingKeys = async () => {
       try {
-        console.log("Current session state:", session);
+        // Validate session before proceeding
+        if (!validateSession()) {
+          setError("Session expired. Please log in again.");
+          setLoading(false);
+          return;
+        }
 
+        console.log("Current session state:", session);
         if (!isAuthenticated || !session?.handle) {
           console.log("No authenticated session:", {
             isAuthenticated,
@@ -32,7 +38,7 @@ export default function KeySetup({ onComplete }) {
         }
 
         // First check if user is registered in contract
-        const publicKeyResult = await getPublicKey(session.handle);
+        const publicKeyResult = await getPublicKey(session.handle, session);
         console.log("Public key check:", publicKeyResult);
 
         if (publicKeyResult?.success && publicKeyResult.publicKey) {
@@ -58,7 +64,7 @@ export default function KeySetup({ onComplete }) {
     };
 
     checkExistingKeys();
-  }, [session, isAuthenticated]);
+  }, [session, isAuthenticated, validateSession]);
 
   const handleSetupKeys = async () => {
     setLoading(true);

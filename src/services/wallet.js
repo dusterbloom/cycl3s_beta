@@ -46,58 +46,19 @@ export const getWalletLink = async () => {
   }
 };
 
-export const getPublicKey = async (handle) => {
-  try {
-    const queryClient = await jsd.ClientFactory.createRPCQueryClient({
-      rpcEndpoint: RPC_ENDPOINT,
-    });
-
-    const state = await queryClient.jsd.jsd.localState({
-      index: CONTRACT_INDEX,
-      key: `bluesky/${handle}`, // Using Bluesky handle
-    });
-
-    // If no key exists, generate and register one
-    if (!state || !state.value) {
-      const { success, publicKey, error } = await generateAndStoreKeyPair(
-        handle
-      );
-
-      if (!success) {
-        throw new Error(error || "Failed to generate keys");
-      }
-
-      // Register the public key with Bluesky handle
-      const registrationResult = await registerPublicKey(
-        handle, // Using Bluesky handle instead of wallet address
-        publicKey
-      );
-
-      if (!registrationResult.success) {
-        throw new Error("Failed to register public key in contract");
-      }
-
-      return { success: true, publicKey };
-    }
-
-    return {
-      success: true,
-      publicKey: JSON.parse(state.value),
-    };
-  } catch (error) {
-    console.error("Error with public key:", error);
-    return { success: false, error: error.message };
-  }
+// Add key types enum
+const KeyTypes = {
+  PERMANENT: 'PERMANENT',
+  TEMPORARY: 'TEMPORARY'
 };
 
-export const registerPublicKey = async (handle, publicKey) => {
+export const registerPublicKey = async (handle, publicKey, keyType = KeyTypes.PERMANENT) => {
   try {
     if (!window.keplr) {
       throw new Error("Keplr extension not found");
     }
 
-    console.log("Registering public key for Bluesky handle:", handle);
-    console.log("Public key to register:", publicKey);
+    console.log(`Registering ${keyType} key for handle:`, handle);
 
     await suggestChain();
     await window.keplr.enable(CHAIN_ID);
@@ -112,16 +73,20 @@ export const registerPublicKey = async (handle, publicKey) => {
       chainId: CHAIN_ID,
     });
 
-    // Create message data with Bluesky handle
-    const msgArg = `{"handle":"${handle}","publicKey":"${publicKey}"}`;
-    console.log("Message arg:", msgArg);
+    // Create message data with handle and key type
+    const msgArg = JSON.stringify({
+      handle,
+      publicKey,
+      keyType
+    });
 
     const msg = {
       typeUrl: "/jsd.jsd.MsgEval",
       value: {
         creator: address,
         index: CONTRACT_INDEX,
-        fnName: "registerBlueskyHandle",
+        // Use different function names based on key type
+        fnName: keyType === KeyTypes.TEMPORARY ? "registerTemporaryKey" : "registerBlueskyHandle",
         arg: msgArg,
       },
     };
@@ -131,15 +96,66 @@ export const registerPublicKey = async (handle, publicKey) => {
       gas: "550000",
     };
 
+    console.log("Sending registration transaction:", msg);
     const result = await client.signAndBroadcast(address, [msg], fee);
-    console.log("Transaction result:", result);
-    return { success: true, result };
+    console.log("Registration result:", result);
+
+    return { success: true, result, keyType };
   } catch (error) {
     console.error("Error registering public key:", error);
     return { success: false, error: error.message };
   }
 };
 
+// Update getPublicKey to include key type information
+export const getPublicKey = async (handle, session) => {
+  try {
+    const queryClient = await jsd.ClientFactory.createRPCQueryClient({
+      rpcEndpoint: RPC_ENDPOINT,
+    });
+
+    // Check if this is the authenticated user
+    const isAuthenticatedUser = session?.handle === handle;
+    console.log("Auth check:", { isAuthenticatedUser, sessionHandle: session?.handle, handle });
+
+    const state = await queryClient.jsd.jsd.localState({
+      index: CONTRACT_INDEX,
+      key: `bluesky/${handle}`,
+    });
+    console.log("sTATE check:", state);
+
+    if (!state || !state.value) {
+      if (!session) {
+        throw new Error("Session is required for key operations");
+      }
+
+      // Do not register keys here, just return appropriate key type
+      return {
+        success: true,
+        publicKey: state,
+        keyType: isAuthenticatedUser ? KeyTypes.PERMANENT : KeyTypes.TEMPORARY
+      };
+    }
+
+    // Parse existing key data
+    let keyData;
+    try {
+      keyData = JSON.parse(state.value);
+    } catch (error) {
+      // If parsing fails, assume the value is already a JSON string
+      keyData = state;
+    }
+
+    return {
+      success: true,
+      publicKey: state,
+      keyType: keyData.keyType || KeyTypes.PERMANENT // Default to PERMANENT for backward compatibility
+    };
+  } catch (error) {
+    console.error("Error with public key:", error);
+    return { success: false, error: error.message };
+  }
+};
 // Add query function for public keys
 export const queryPublicKey = async (handle) => {
   try {
@@ -168,7 +184,7 @@ export const queryPublicKey = async (handle) => {
 const CHAIN_ID = "hyperweb-1"; // Updated chain ID
 const RPC_ENDPOINT = "http://localhost:26657";
 const REST_ENDPOINT = "http://localhost:1317";
-const CONTRACT_INDEX = "9";
+const CONTRACT_INDEX = "17";
 
 export const suggestChain = async () => {
   try {
