@@ -187,35 +187,26 @@ export const initializeSignalProtocol = async (userId) => {
 //     }
 //   };
 
-export const getPublicKeyData = async (username) => {
+
+export const getPublicKeyData = async (handle) => {
   try {
-    const response = await getPublicKeyFromRegistry(username);
-    if (!response.success) {
-      throw new Error(response.error || 'Failed to retrieve public key');
+    if (!handle) {
+      console.log('No handle provided to getPublicKeyData');
+      return null;
     }
 
-    // The public key is already base64 encoded from the contract
-    const publicKeyBase64 = response.publicKey;
+    console.log('Getting public key data for handle:', handle);
+    const response = await getPublicKeyFromRegistry(handle);
     
-    try {
-      // First decode the base64 string
-      const decodedString = atob(publicKeyBase64);
-      // Then parse the JSON
-      const parsedData = JSON.parse(decodedString);
-      
-      console.log('Retrieved public key data:', {
-        username,
-        rawKey: publicKeyBase64,
-        decoded: decodedString,
-        parsed: parsedData
-      });
-
-      return parsedData;
-    } catch (parseError) {
-      console.error('Error parsing public key:', parseError);
-      console.log('Raw public key:', publicKeyBase64);
-      throw new Error('Invalid public key format');
+    if (!response.success) {
+      console.log('No public key found in contract for handle:', handle);
+      return null;
     }
+
+    return {
+      success: true,
+      publicKey: response.publicKey
+    };
   } catch (error) {
     console.error("Error getting public key:", error);
     return null;
@@ -322,12 +313,36 @@ export const decryptMessage = async (encryptedData) => {
   }
 };
 
-export const hasStoredKeys = (session) => {
+export const hasStoredKeys = async (session) => {
   try {
-    const publicKeyData = localStorage.getItem(
-      `${KEY_STORAGE_PREFIX}${session.handle}_publicKey`
+    // Wait for session to be fully loaded
+    if (!session?.user?.handle) {
+      console.log('Session not fully loaded:', {
+        session,
+        user: session?.user,
+        handle: session?.user?.handle
+      });
+      return false;
+    }
+
+    const handle = session.user.handle;
+    console.log('Checking stored keys for handle:', handle);
+
+    // Check local storage first
+    const localKeys = localStorage.getItem(
+      `${KEY_STORAGE_PREFIX}${handle}_publicKey`
     );
-    return !!publicKeyData;
+
+    if (!localKeys) {
+      console.log('No local keys found for handle:', handle);
+      return false;
+    }
+
+    // Only check contract if we have local keys
+    const contractKeys = await queryPublicKey(handle);
+    console.log('Contract query response:', contractKeys);
+
+    return contractKeys?.success;
   } catch (error) {
     console.error("Error checking stored keys:", error);
     return false;

@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { createPost } from '../services/bluesky';
 import { searchUsers } from '../services/bluesky';
-import { encryptMessage, hasKeys } from '../services/encryption';
+import { encryptMessage, hasStoredKeys as hasKeys, getPublicKeyData } from '../services/signalEncryption';
 import KeySetup from './KeySetup';
 
 export default function CreatePost({ onPostCreated }) {
-  const { session } = useAuth();
+  const { session, isLoading } = useAuth();
   const [content, setContent] = useState('');
   const [isEncrypted, setIsEncrypted] = useState(false);
   const [recipient, setRecipient] = useState(null);
@@ -16,15 +16,43 @@ export default function CreatePost({ onPostCreated }) {
   const [loading, setLoading] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [needsKeySetup, setNeedsKeySetup] = useState(false);
+  const [isChecking, setIsChecking] = useState(true);
 
   // Check if keys are set up
   useEffect(() => {
-    setNeedsKeySetup(!hasKeys());
-  }, []);
+    const checkKeys = async () => {
+   
+      setIsChecking(true);
+      try {
+        const hasKeys = await hasStoredKeys(session);
+        setNeedsKeySetup(!hasKeys);
+      } catch (error) {
+        console.error('Error checking keys:', error);
+        setNeedsKeySetup(true);
+      } finally {
+        setIsChecking(false);
+      }
+    };
+
+    checkKeys();
+  }, [session?.user?.handle, isLoading]);
+
+  if (isLoading || isChecking) {
+    return <div>Loading...</div>;
+  }
 
   // Handle encryption toggle
-  const handleEncryptionToggle = () => {
-    if (!hasKeys()) {
+  const handleEncryptionToggle = async () => {
+    if (!session?.user?.handle) {
+      console.log('No user handle available');
+      return;
+    }
+    
+    const hasKeys = await hasStoredKeys({
+      handle: session.user.handle
+    });
+    
+    if (!hasKeys) {
       setNeedsKeySetup(true);
       return;
     }

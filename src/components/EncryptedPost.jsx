@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
-  hasStoredKeys,
+  hasStoredKeys as hasKeys,
   getPublicKeyData,
   decryptMessage
 } from "../services/signalEncryption"; // Add this import
@@ -24,20 +24,20 @@ export default function EncryptedPost({ post }) {
   // Check if the current user is the recipient
   const isRecipient = () => {
     const recipientHandle = getRecipientHandle();
-    console.log("Checking recipient:", {
-      recipientHandle,
-      currentUser: session?.handle,
-      isMatch: recipientHandle === session?.handle,
-    });
+    // console.log("Checking recipient:", {
+    //   recipientHandle,
+    //   currentUser: session?.handle,
+    //   isMatch: recipientHandle === session?.handle,
+    // });
     return recipientHandle === session?.handle;
   };
 
-  console.log("Post data:", {
-    text: post.record.text,
-    session: session,
-    recipientHandle: getRecipientHandle(),
-    isRecipient: isRecipient(),
-  });
+  // console.log("Post data:", {
+  //   text: post.record.text,
+  //   session: session,
+  //   recipientHandle: getRecipientHandle(),
+  //   isRecipient: isRecipient(),
+  // });
 
   const canDecrypt = () => {
     const recipientHandle = getRecipientHandle();
@@ -84,12 +84,12 @@ export default function EncryptedPost({ post }) {
         throw new Error("Unable to retrieve sender's encryption key");
       }
   
-      console.log("Decryption attempt:", {
-        sender: post.author.handle,
-        recipient: recipientHandle,
-        senderPublicKey,
-        encryptedData
-      });
+      // console.log("Decryption attempt:", {
+      //   sender: post.author.handle,
+      //   recipient: recipientHandle,
+      //   senderPublicKey,
+      //   encryptedData
+      // });
   
       const decrypted = await decryptMessage(encryptedData, senderPublicKey);
       if (!decrypted.success) {

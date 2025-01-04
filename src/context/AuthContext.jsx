@@ -8,21 +8,18 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const initializeAuth = async () => {
-      const storedSession = localStorage.getItem('bluesky_session');
-      if (storedSession) {
-        try {
-          const sessionData = JSON.parse(storedSession);
-          setSession(sessionData);
-        } catch (error) {
-          console.error('Failed to parse stored session:', error);
-          localStorage.removeItem('bluesky_session');
-        }
+    const storedSession = localStorage.getItem('bluesky_session');
+    if (storedSession) {
+      try {
+        const parsedSession = JSON.parse(storedSession);
+        console.log('Restoring session:', parsedSession);
+        setSession(parsedSession);
+      } catch (error) {
+        console.error('Failed to parse stored session:', error);
+        localStorage.removeItem('bluesky_session');
       }
-      setLoading(false);
-    };
-
-    initializeAuth();
+    }
+    setLoading(false);
   }, []);
 
   const login = async (identifier, password) => {
@@ -57,7 +54,7 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     loading,
-    isAuthenticated: !!session,
+    isAuthenticated: !!session?.handle, // Update this check
   };
 
   return (
