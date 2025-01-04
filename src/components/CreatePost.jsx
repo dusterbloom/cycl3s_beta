@@ -1,40 +1,41 @@
-import React, { useState, useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
-import { createPost } from "../services/bluesky";
-import { searchUsers } from "../services/bluesky";
-import { registerPublicKey } from '../services/wallet';
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { createPost } from '../services/bluesky';
+import { searchUsers } from '../services/bluesky';
+import { encryptMessage, hasKeys } from '../services/encryption';
+import KeySetup from './KeySetup';
 
-import { encryptMessage,  hasStoredKeys,
-  storeKeyPair,
-  getPublicKeyData, initializeSignalProtocol } from "../services/signalEncryption"; // Add this import
-
-
-export default function CreatePost() {
+export default function CreatePost({ onPostCreated }) {
   const { session } = useAuth();
-  const [content, setContent] = useState("");
+  const [content, setContent] = useState('');
   const [isEncrypted, setIsEncrypted] = useState(false);
-  const [recipient, setRecipient] = useState("");
+  const [recipient, setRecipient] = useState(null);
   const [searchResults, setSearchResults] = useState([]);
   const [showUserSearch, setShowUserSearch] = useState(false);
-  const [error, setError] = useState("");  // Define setError using useState
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [publicKey, setPublicKey] = useState(null);
-  const [searchInput, setSearchInput] = useState("");
-  
-  // Check for keys on component mount
-  // useEffect(() => {
-  //   const initializeKeys = async () => {
-  //     try {
-  //       await initializeKeys(session, setPublicKey, setError);
-  //     } catch (error) {
-  //       console.error("Key initialization error:", error);
-  //       setError("Failed to initialize encryption keys. Please refresh the page.");
-  //     }
-  //   };
+  const [searchInput, setSearchInput] = useState('');
+  const [needsKeySetup, setNeedsKeySetup] = useState(false);
 
-  //   initializeKeys();
-  // }, [session]);
+  // Check if keys are set up
+  useEffect(() => {
+    setNeedsKeySetup(!hasKeys());
+  }, []);
 
+  // Handle encryption toggle
+  const handleEncryptionToggle = () => {
+    if (!hasKeys()) {
+      setNeedsKeySetup(true);
+      return;
+    }
+    setIsEncrypted(!isEncrypted);
+  };
+
+  // Handle key setup completion
+  const handleKeySetupComplete = () => {
+    setNeedsKeySetup(false);
+    setIsEncrypted(true);
+  };
 
   const handleUserSearch = async (query) => {
     if (!query.trim()) {
@@ -52,38 +53,6 @@ export default function CreatePost() {
     }
   };
 
-  // const selectRecipient = async (user) => {
-  //   try {
-  //     setLoading(true);
-  //     setError("");
-
-  //     // Verify recipient's public key availability
-  //     const recipientPublicKey = await getPublicKeyData(user.handle);
-  //     if (!recipientPublicKey) {
-  //       throw new Error(`${user.handle} hasn't set up encryption keys yet`);
-  //     }
-
-    
-  //     setRecipient({
-  //       handle: user.handle,
-  //       displayName: user.displayName,
-  //       publicKey: response,
-  //     });
-
-  //         // Store recipient's public key in localStorage
-  //   // localStorage.setItem(`cycl3_keys_recipient_${user.handle}`, JSON.stringify(recipientPublicKey));
-
-  //     setShowUserSearch(false);
-  //     setSearchResults([]);
-  //     setSearchInput(""); // Clear search input after selection
-  //   } catch (error) {
-  //     console.error("Recipient validation error:", error);
-  //     setError(error.message);
-  //     setRecipient(null); // Clear recipient on error
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
   
   const selectRecipient = async (user) => {
     try {
@@ -166,11 +135,17 @@ export default function CreatePost() {
   };
   return (
     <form onSubmit={handleSubmit} className="create-post">
+            {needsKeySetup ? (
+        <KeySetup onComplete={handleKeySetupComplete} />
+      ) : (
+        <>
       <div className="create-post-header">
         <button
           type="button"
           className={`btn-icon ${isEncrypted ? "active" : ""}`}
-          onClick={() => setIsEncrypted(!isEncrypted)}
+          // onClick={() => setIsEncrypted(!isEncrypted)}
+          onClick={handleEncryptionToggle}
+
           title={
             isEncrypted ? "Switch to public post" : "Switch to encrypted post"
           }
@@ -256,7 +231,10 @@ export default function CreatePost() {
         >
           {loading ? "Posting..." : "Post"}
         </button>
-      </div>
+        </div>
+        </>
+      )}
     </form>
   );
 }
+

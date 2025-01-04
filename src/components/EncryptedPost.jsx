@@ -5,6 +5,7 @@ import {
   getPublicKeyData,
   decryptMessage
 } from "../services/signalEncryption"; // Add this import
+import KeySetup from './KeySetup';
 
 
 export default function EncryptedPost({ post }) {
@@ -12,6 +13,8 @@ export default function EncryptedPost({ post }) {
   const [decryptedContent, setDecryptedContent] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showKeySetup, setShowKeySetup] = useState(false);
+
   // Extract recipient handle from the post text
   const getRecipientHandle = () => {
     const match = post.record.text.match(/🔒 @([a-zA-Z0-9.-]+)/);
@@ -36,17 +39,25 @@ export default function EncryptedPost({ post }) {
     isRecipient: isRecipient(),
   });
 
-    // // Auto-decrypt on mount
-    // useEffect(() => {
-    //   if (isRecipient() && !decryptedContent && !error) {
-    //     handleDecrypt();
-    //   }
-    // }, [post.uri]); // Add post.uri as dependency to handle conversation changes
-  
-  // Check if the current user is the recipient or sender
   const canDecrypt = () => {
     const recipientHandle = getRecipientHandle();
     return recipientHandle === session?.handle || post.author.handle === session?.handle;
+  };
+
+
+  // Handle decrypt button click
+  const handleDecryptClick = () => {
+    if (!hasKeys()) {
+      setShowKeySetup(true);
+      return;
+    }
+    handleDecrypt();
+  };
+
+  // Handle key setup completion
+  const handleKeySetupComplete = () => {
+    setShowKeySetup(false);
+    handleDecrypt();
   };
 
   const handleDecrypt = async () => {
@@ -96,44 +107,51 @@ export default function EncryptedPost({ post }) {
 
   return (
     <div className="encrypted-post">
-      <div className="encrypted-post-header">
-        <span className="encrypted-badge">🔒 Encrypted Message</span>
-        {getRecipientHandle() && (
-          <span className="encrypted-recipient">
-            To: @{getRecipientHandle()}
-          </span>
-        )}
-      </div>
-  
-      {!decryptedContent && !error && (
-        <div className="encrypted-content-locked">
-          {canDecrypt() ? (
-            <>
-              <p>
-                {post.author.handle === session?.handle 
-                  ? "You sent this encrypted message"
-                  : "This message is encrypted for you"}
-              </p>
-              <button
-                className="btn btn-primary"
-                onClick={handleDecrypt}
-                disabled={loading}
-              >
-                {loading ? "Decrypting..." : "Decrypt Message"}
-              </button>
-            </>
-          ) : (
-            <p>This message is encrypted for @{getRecipientHandle()}</p>
+      {showKeySetup ? (
+        <KeySetup onComplete={handleKeySetupComplete} />
+      ) : (
+        <>
+          <div className="encrypted-post-header">
+            <span className="encrypted-badge">🔒 Encrypted Message</span>
+            {getRecipientHandle() && (
+              <span className="encrypted-recipient">
+                To: @{getRecipientHandle()}
+              </span>
+            )}
+          </div>
+
+          {!decryptedContent && !error && (
+            <div className="encrypted-content-locked">
+              {canDecrypt() ? (
+                <>
+                  <p>
+                    {post.author.handle === session?.handle 
+                      ? "You sent this encrypted message"
+                      : "This message is encrypted for you"}
+                  </p>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleDecryptClick}
+                    disabled={loading}
+                  >
+                    {loading ? "Decrypting..." : "Decrypt Message"}
+                  </button>
+                </>
+              ) : (
+                <p>This message is encrypted for @{getRecipientHandle()}</p>
+              )}
+            </div>
           )}
-        </div>
+
+          {decryptedContent && (
+            <div className="encrypted-content-unlocked">
+              <p>{decryptedContent}</p>
+            </div>
+          )}
+
+          {error && <div className="error">{error}</div>}
+        </>
       )}
-      {decryptedContent && (
-        <div className="encrypted-content-unlocked">
-          <p>{decryptedContent}</p>
-        </div>
-      )}
-      {error && <div className="error">{error}</div>}
     </div>
   );
-
-};
+}
