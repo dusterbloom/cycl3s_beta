@@ -6,12 +6,21 @@ import {
   encryptMessage,
   hasStoredKeys as hasKeys,
   getPublicKeyData,
+  generateAndStoreKeyPair
 } from "../services/signalEncryption";
 import KeySetup from "./KeySetup";
 
 import {
+  registerPublicKey,
   getPublicKey,
 } from "../services/wallet";
+
+
+// Add key types enum
+const KeyTypes = {
+  PERMANENT: 'PERMANENT',
+  TEMPORARY: 'TEMPORARY'
+};
 
 export default function CreatePost({ onPostCreated }) {
   const { session, isAuthenticated, validateSession } = useAuth();
@@ -116,20 +125,36 @@ export default function CreatePost({ onPostCreated }) {
     try {
       setLoading(true);
       setError("");
-
-      // Verify recipient's public key availability
-      const recipientPublicKey = await getPublicKeyData(user.handle);
-      if (!recipientPublicKey) {
-        throw new Error(`${user.handle} hasn't set up encryption keys yet`);
+  
+      // Check if the recipient has a public key registered
+      const recipientPublicKey = await getPublicKey(user.handle);
+      if (!recipientPublicKey?.publicKey) {
+        // Recipient doesn't have a key, generate and register a temporary key for them
+        const temporaryKey = await generateAndStoreKeyPair(user.handle);
+        if (!temporaryKey) {
+          throw new Error(`Failed to generate temporary key for ${user.handle}`);
+        }
+  
+        const registrationResult = await registerPublicKey(user.handle, temporaryKey.publicKey, KeyTypes.TEMPORARY);
+        if (!registrationResult.success) {
+          throw new Error(`Failed to register temporary key for ${user.handle}`);
+        }
+  
+        // Store the recipient with their temporary public key
+        setRecipient({
+          handle: user.handle,
+          displayName: user.displayName,
+          publicKey: temporaryKey.publicKey,
+        });
+      } else {
+        // Store the recipient with their existing public key
+        setRecipient({
+          handle: user.handle,
+          displayName: user.displayName,
+          publicKey: recipientPublicKey.publicKey,
+        });
       }
-
-      // Store the recipient with their public key
-      setRecipient({
-        handle: user.handle,
-        displayName: user.displayName,
-        publicKey: recipientPublicKey, // Store the actual public key
-      });
-
+  
       setShowUserSearch(false);
       setSearchResults([]);
       setSearchInput("");
