@@ -56,8 +56,7 @@ export const initializeKeys = async (session) => {
     // Register public key on-chain
     const registrationResult = await registerPublicKey(
       session.handle, 
-      publicKeyJwk,
-      'PERMANENT'
+      publicKeyJwk
     );
 
     if (!registrationResult.success) {
