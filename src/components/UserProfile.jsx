@@ -3,8 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { getUserProfile, getUserPosts, toggleFollow } from '../services/bluesky';
 
-import { hasStoredKeys, getPublicKeyData, storeKeyPair } from '../services/signalEncryption';
 import { initializeKeys } from '../utils/init';
+import { registerPublicKey, getPublicKey as getPublicKeyData, } from '../services/wallet';
 
 export default function UserProfile() {
   const { handle } = useParams();

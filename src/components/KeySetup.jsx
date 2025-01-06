@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import {
   generateAndStoreKeyPair,
   hasStoredKeys,
-} from "../services/signalEncryption";
+} from "../services/encryption";
 import {
   registerPublicKey,
   queryPublicKey,

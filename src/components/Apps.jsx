@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { 
   connectKeplr, 
-  getKeplrAccount, 
+  getWalletLink, 
+  removeWalletLink,
   suggestChain,
   getSigningClient,
-  registerPublicKey, 
-  getPublicKey 
+  getPublicKey as getPublicKeyData,
+  registerPublicKey
 } from '../services/wallet';
 import { Link, useNavigate } from 'react-router-dom';
-import { storeWalletLink, getWalletLink, removeWalletLink } from '../services/encryption';
+
 
 
 

@@ -1,672 +1,302 @@
-// ECDH-based encryption service
+import { registerPublicKey, getPublicKey  } from '../services/wallet';
+
+const KEY_VERSION = '1.0';
+const KEY_STORAGE_PREFIX = 'cycl3_keys_';
+const KEY_ALGORITHM = {
+  name: 'ECDH',
+  namedCurve: 'P-256'
+};
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+const CHAIN_ID = "hyperweb-1"; // Updated chain ID
+const RPC_ENDPOINT = "http://localhost:26657";
+const REST_ENDPOINT = "http://localhost:1317";
+const CONTRACT_INDEX = "1";
 
 
-// Generate ECDH key pair
-export const generateECDHKeyPair = async () => {
+// Generate and store new keypair, plus register on-chain
+export const initializeKeys = async (session) => {
   try {
+    if (!session?.handle) {
+      throw new Error('User must be logged in to initialize keys');
+    }
+
+    // Check for existing keys
+    const existingKeys = await getStoredKeyPair();
+    if (existingKeys.success) {
+      return existingKeys;
+    }
+
+    // Generate new ECDH keypair
     const keyPair = await crypto.subtle.generateKey(
-      {
-        name: 'ECDH',
-        namedCurve: 'P-256'
-      },
-      true, // extractable
-      ['deriveKey', 'deriveBits'] // usages
-    );
-    return keyPair;
-  } catch (error) {
-    console.error('Key pair generation error:', error);
-    throw error;
-  }
-};
-
-
-
-// Import public key from shared data
-export const importPublicKey = async (publicKeyData) => {
-  try {
-    return await crypto.subtle.importKey(
-      'raw',
-      new Uint8Array(publicKeyData),
-      {
-        name: 'ECDH',
-        namedCurve: 'P-256'
-      },
+      KEY_ALGORITHM,
       true,
-      [] // No usages for public key
+      ['deriveKey', 'deriveBits']
     );
-  } catch (error) {
-    console.error('Public key import error:', error);
-    throw error;
-  }
-};
 
-// Generate shared secret using ECDH
-const deriveSharedSecret = async (privateKey, publicKey) => {
-  try {
-    return await crypto.subtle.deriveKey(
-      {
-        name: 'ECDH',
-        public: publicKey
-      },
-      privateKey,
-      {
-        name: 'AES-GCM',
-        length: 256
-      },
-      false, // not extractable
-      ['encrypt', 'decrypt']
-    );
-  } catch (error) {
-    console.error('Shared secret derivation error:', error);
-    throw error;
-  }
-};
+    // Export keys for storage
+    const publicKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+    const privateKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
 
-
-// Helper function for security event logging
-async function logSecurityEvent(event) {
-  try {
-    const events = JSON.parse(
-      localStorage.getItem(KEY_STORAGE_PREFIX + 'security_log') || '[]'
-    );
-    events.push(event);
-    // Keep only last 100 events
-    if (events.length > 100) {
-      events.shift();
-    }
-    localStorage.setItem(
-      KEY_STORAGE_PREFIX + 'security_log', 
-      JSON.stringify(events)
-    );
-  } catch (error) {
-    console.error('Security log error:', error);
-  }
-}
-
-
-// Helper function to collect device entropy
-async function collectDeviceEntropy() {
-  // Initialize entropy array
-  const entropy = new Uint8Array(32);
-  
-  // Collect entropy from various sources
-  const sources = [
-    navigator.userAgent,
-    screen.width.toString(),
-    screen.height.toString(),
-    new Date().getTime().toString(),
-    crypto.getRandomValues(new Uint8Array(16)).toString()
-  ];
-   // Mix entropy sources
-  const sourceData = new TextEncoder().encode(sources.join(''));
-  for (let i = 0; i < sourceData.length && i < entropy.length; i++) {
-    entropy[i] = sourceData[i];
-  }
-   // Add cryptographic randomness
-  const randomData = crypto.getRandomValues(new Uint8Array(16));
-  for (let i = 0; i < randomData.length; i++) {
-    entropy[i % entropy.length] ^= randomData[i];
-  }
-   return entropy;
-}
-
-
- // Key rotation mechanism
- export const rotateKeys = async (oldVersion) => {
-  try {
-    // Get old keys if they exist
-    const oldKeys = await getStoredKeyPair();
-    
-    // Generate new key pair
-    const newKeyPair = await storeKeyPair();
-    
-    if (!newKeyPair.success) {
-      throw new Error('Failed to generate new keys');
-    }
-     // If we had old keys, we need to re-encrypt any existing data
-    if (oldKeys.success) {
-      await reencryptData(oldKeys.privateKey, newKeyPair.privateKey);
-    }
-     // Log rotation for security audit
-    await logSecurityEvent({
-      type: 'KEY_ROTATION',
-      oldVersion,
-      newVersion: KEY_VERSION,
-      timestamp: Date.now()
-    });
-     return {
-      success: true,
-      publicKey: newKeyPair.publicKey
-    };
-  } catch (error) {
-    console.error('Key rotation error:', error);
-    return {
-      success: false,
-      error: 'Failed to rotate encryption keys'
-    };
-  }
- ;
- }
- 
-
-
-const KEY_VERSION = '1.0';
- const KEY_STORAGE_PREFIX = 'cycl3_keys_';
- const KEY_ALGORITHM = {
-  name: 'ECDH',
-  namedCurve: 'P-256'
- 
- }
-
-// Helper function to export public key
-async function exportPublicKey(publicKey) {
- try {
-   return await crypto.subtle.exportKey('jwk', publicKey);
- } catch (error) {
-   console.error('Public key export error:', error);
-   return null;
- }
-}
-// Get public key data for sharing
-export const getPublicKeyData = async () => {
-  try {
-    const storedData = localStorage.getItem(`${KEY_STORAGE_PREFIX}keypair`);
-    if (!storedData) {
-      throw new Error('No encryption keys found');
-    }
-     const { publicKey } = JSON.parse(storedData);
-    return publicKey;
-  } catch (error) {
-    console.error('Public key retrieval error:', error);
-    return 
-
-;
-}
-}
-// Check for stored keys
-export const hasStoredKeys = () => {
-  try {
-    const keys = localStorage.getItem(`${KEY_STORAGE_PREFIX}keypair`);
-    return !!keys;
-  } catch (error) {
-    console.error('Error checking stored keys:', error);
-    return false;
-  }
-;
-}
-// Store key pair with encryption
-export const storeKeyPair = async () => {
- try {
-   // Generate ECDH keypair
-   const keyPair = await crypto.subtle.generateKey(
-     {
-       name: 'ECDH',
-       namedCurve: 'P-256'
-     },
-     true, // extractable
-     ['deriveKey', 'deriveBits']
-   );
-    // Export keys to JWK format
-      // Export keys
-      const publicKey = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
-      const privateKey = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
-    // Store key data
+    // Store locally
     const keyData = {
       version: KEY_VERSION,
       created: Date.now(),
-      publicKey,
-      privateKey
+      publicKey: publicKeyJwk,
+      privateKey: privateKeyJwk
     };
-     localStorage.setItem(
-      `${KEY_STORAGE_PREFIX}keypair`,
+
+    localStorage.setItem(
+      `${KEY_STORAGE_PREFIX}${session.handle}_keypair`,
       JSON.stringify(keyData)
     );
-     return {
+
+    // Register public key on-chain
+    const registrationResult = await registerPublicKey(
+      session.handle, 
+      publicKeyJwk,
+      'PERMANENT'
+    );
+
+    if (!registrationResult.success) {
+      throw new Error('Failed to register public key on-chain');
+    }
+
+    return {
       success: true,
-      publicKey
+      publicKey: keyPair.publicKey,
+      privateKey: keyPair.privateKey
+    };
+  } catch (error) {
+    console.error('Key initialization error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+export const generateAndStoreKeyPair = async (handle) => {
+  try {
+    // Generate ECDH keypair
+    const keyPair = await crypto.subtle.generateKey(
+      KEY_ALGORITHM,
+      true,
+      ['deriveKey', 'deriveBits']
+    );
+
+    // Export keys to JWK format
+    const publicKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+    const privateKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
+
+    // Store private key locally
+    const keyData = {
+      version: KEY_VERSION,
+      created: Date.now(),
+      publicKey: publicKeyJwk,
+      privateKey: privateKeyJwk
+    };
+
+    localStorage.setItem(
+      `${KEY_STORAGE_PREFIX}${handle}_keypair`,
+      JSON.stringify(keyData)
+    );
+
+    // Convert any BigInt values to strings before stringifying
+    const serializedPublicKey = Object.entries(publicKeyJwk).reduce(
+      (acc, [key, value]) => {
+        acc[key] = typeof value === 'bigint' ? value.toString() : value;
+        return acc;
+      },
+      {}
+    );
+
+    // For the contract, send the serialized public key
+    const publicKeyString = btoa(JSON.stringify(serializedPublicKey));
+
+    return {
+      success: true,
+      publicKey: publicKeyString,
     };
   } catch (error) {
     console.error('Key generation error:', error);
     return {
       success: false,
-      error: 'Failed to generate encryption keys'
+      error: error.message
     };
   }
-;}
-// Get stored key pair
-export const getStoredKeyPair = async () => {
+};
+
+// Retrieve stored keypair
+// Update getStoredKeyPair to first check contract registry
+export const getStoredKeyPair = async (handle) => {
   try {
-    const storedData = localStorage.getItem(`${KEY_STORAGE_PREFIX}keypair`);
-    if (!storedData) {
-      throw new Error('No encryption keys found');
+    // ALWAYS check contract registry first
+    const registryResponse = await getPublicKey(handle);
+    if (!registryResponse.success) {
+      throw new Error(`No registered keys found for ${handle} on contract`);
     }
-     const { publicKey: publicKeyJwk, privateKey: privateKeyJwk } = JSON.parse(storedData);
-     // Import keys
+
+    // Get local keys to match against registry
+    const storedData = localStorage.getItem(`${KEY_STORAGE_PREFIX}${handle}_keypair`);
+    if (!storedData) {
+      throw new Error('No matching local keys found');
+    }
+
+    const keyData = JSON.parse(storedData);
+    const registryKey = JSON.parse(atob(registryResponse.publicKey.value));
+
+    // Verify local public key matches registry
+    if (JSON.stringify(keyData.publicKey) !== JSON.stringify(registryKey)) {
+      throw new Error('Local keys do not match contract registry');
+    }
+
+    // Import keys only after verification
     const publicKey = await crypto.subtle.importKey(
       'jwk',
-      publicKeyJwk,
+      keyData.publicKey,
       KEY_ALGORITHM,
       true,
       []
     );
-     const privateKey = await crypto.subtle.importKey(
+
+    const privateKey = await crypto.subtle.importKey(
       'jwk',
-      privateKeyJwk,
+      keyData.privateKey,
       KEY_ALGORITHM,
       true,
       ['deriveKey', 'deriveBits']
     );
-     return {
+
+    return {
       success: true,
       publicKey,
       privateKey
     };
   } catch (error) {
     console.error('Key retrieval error:', error);
-    return {
-      success: false,
-      error: 'Failed to retrieve encryption keys'
-    };
+    return { success: false, error: error.message };
   }
-;
-}
-// Constants for encrypted data types
-const ENCRYPTED_ATA_TYPES = {
-  MESSAGE: 'message',
-  WALLET_LINK: 'wallet_link',
-  PROFILE_DATA: 'profile_data'
 };
- // Re-encrypt data during key rotation
-export async function reencryptData(oldPrivateKey, newPrivateKey) {
+
+export const getKeplrKeys = async (handle) => {
   try {
-    // Start performance measurement
-    const startTime = performance.now();
+    if (!window.keplr) {
+      throw new Error("Keplr extension not found");
+    }
+
+    await window.keplr.enable(CHAIN_ID);
+    const offlineSigner = window.keplr.getOfflineSigner(CHAIN_ID);
+    const accounts = await offlineSigner.getAccounts();
     
-    // Get all encrypted data from storage
-    const encryptedItems = await getAllEncryptedData();
+    // Get the encryption key from Keplr
+    const encryptionKey = await window.keplr.getKey(CHAIN_ID);
     
-    // Track progress
-    let processedItems = 0;
-    const totalItems = encryptedItems.length;
-    
-    // Process each encrypted item
-    const results = await Promise.allSettled(
-      encryptedItems.map(async (item) => {
-        try {
-          // Decrypt with old key
-          const decrypted = await decryptWithKey(item.data, oldPrivateKey);
-          
-          // Re-encrypt with new key
-          const reencrypted = await encryptWithKey(decrypted, newPrivateKey);
-          
-          // Store re-encrypted data
-          await storeEncryptedData(item.id, item.type, reencrypted);
-          
-          // Update progress
-          processedItems++;
-          await updateRotationProgress(processedItems, totalItems);
-          
-          return { success: true, id: item.id };
-        } catch (error) {
-          return { 
-            success: false, 
-            id: item.id, 
-            error: error.message 
-          };
-        }
-      })
-    );
-    
-    // Calculate statistics
-    const stats = calculateRotationStats(results);
-    
-    // Log rotation event
-    await logSecurityEvent({
-      type: 'DATA_REENCRYPTION',
-      timestamp: Date.now(),
-      duration: performance.now() - startTime,
-      stats
-    });
-    
-    // Return results
     return {
-      success: stats.failureCount === 0,
-      stats,
-      errors: results
-        .filter(r => r.status === 'rejected' || !r.value.success)
-        .map(r => r.reason || r.value.error)
+      success: true,
+      publicKey: encryptionKey.pubKey,
+      address: accounts[0].address,
+      handle: handle
     };
   } catch (error) {
-    console.error('Data re-encryption error:', error);
-    throw new Error('Failed to re-encrypt data during key rotation');
+    console.error("Failed to get Keplr keys:", error);
+    return { success: false, error: error.message };
   }
-}
+};
 
- // Helper function to get all encrypted data
-export async function getAllEncryptedData() {
-  const encryptedData = [];
-  
-  // Scan localStorage for encrypted items
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key.startsWith(KEY_STORAGE_PREFIX)) {
-      try {
-        const data = JSON.parse(localStorage.getItem(key));
-        if (data.encrypted) {
-          encryptedData.push({
-            id: key.replace(KEY_STORAGE_PREFIX, ''),
-            type: data.type,
-            data: data.data
-          });
-        }
-      } catch (error) {
-        console.warn(`Failed to parse item ${key}:`, error);
-      }
-    }
-  }
-  
-  return encryptedData;
-}
- // Helper function to store re-encrypted data
-export async function storeEncryptedData(id, type, data) {
-  localStorage.setItem(
-    KEY_STORAGE_PREFIX + id,
-    JSON.stringify({
-      encrypted: true,
-      type,
-      data,
-      updatedAt: Date.now()
-    })
-  );
-}
-
- // Helper function to update rotation progress
-export async function updateRotationProgress(current, total) {
-  localStorage.setItem(
-    KEY_STORAGE_PREFIX + 'rotation_progress',
-    JSON.stringify({
-      current,
-      total,
-      timestamp: Date.now()
-    })
-  );
-}
- // Helper function to calculate rotation statistics
- function calculateRotationStats(results) {
-  return results.reduce((stats, result) => {
-    if (result.status === 'fulfilled' && result.value.success) {
-      stats.successCount++;
-    } else {
-      stats.failureCount++;
-    }
-    return stats;
-  }, { successCount: 0, failureCount: 0 });
-}
- // Decrypt data with specific key
-export async function decryptWithKey(encryptedData, privateKey) {
-  const { iv, data } = encryptedData;
-  
-  // Derive decryption key
-  const decryptionKey = await crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: new Uint8Array(iv),
-      iterations: 100000,
-      hash: 'SHA-256'
-    },
-    privateKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['decrypt']
-  );
-  
-  // Decrypt data
-  const decrypted = await crypto.subtle.decrypt(
-    {
-      name: 'AES-GCM',
-      iv: new Uint8Array(iv)
-    },
-    decryptionKey,
-    new Uint8Array(data)
-  );
-  
-  return new TextDecoder().decode(decrypted);
-}
- // Encrypt data with specific key
-export async function encryptWithKey(data, publicKey) {
-  // Generate IV
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  
-  // Derive encryption key
-  const encryptionKey = await crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: iv,
-      iterations: 100000,
-      hash: 'SHA-256'
-    },
-    publicKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt']
-  );
-  
-  // Encrypt data
-  const encrypted = await crypto.subtle.encrypt(
-    {
-      name: 'AES-GCM',
-      iv: iv
-    },
-    encryptionKey,
-    new TextEncoder().encode(data)
-  );
-  
-  return {
-    iv: Array.from(iv),
-    data: Array.from(new Uint8Array(encrypted))
-  };
-
-}
-
-const compressEncryptedData = (iv, ciphertext, senderKey) => {
-  // Use a more compact format
-  const compressed = {
-    i: btoa(String.fromCharCode(...iv)).replace(/=/g, ''), // iv without padding
-    c: btoa(String.fromCharCode(...new Uint8Array(ciphertext))).replace(/=/g, ''), // ciphertext
-    s: senderKey.x // Only x coordinate is needed for ECDH
-  };
-  return btoa(JSON.stringify(compressed)).replace(/=/g, '');
-}
-
-// Encrypt message
-export const encryptMessage = async (message, recipient) => {
+export const encryptMessage = async (message, recipientHandle, senderHandle, session) => {
   try {
-       // Early length check (rough estimate)
-   if (message.length > 100) {
-    throw new Error('Message too long. Please keep it under 100 characters.');
+    // Get recipient's public key from registry
+    const recipientKeyData = await getPublicKey(recipientHandle);
+    if (!recipientKeyData?.success || !recipientKeyData.publicKey?.value) {
+      throw new Error("Recipient's public key not found");
+    }
+
+    // Create minimal message with shortened fields
+    const msg = {
+      t: message,                    // text
+      s: senderHandle.split('.')[0], // shortened sender
+      d: Date.now().toString(36)     // base36 timestamp
+    };
+
+    // Generate small IV (96 bits = 12 bytes is secure for AES-GCM)
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+
+    // Encrypt message
+    const msgBytes = new TextEncoder().encode(JSON.stringify(msg));
+    const encrypted = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      await crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(recipientKeyData.publicKey.value).slice(0, 32),
+        { name: 'AES-GCM' },
+        false,
+        ['encrypt']
+      ),
+      msgBytes
+    );
+
+    // Combine IV and encrypted data into single Uint8Array
+    const combined = new Uint8Array([...iv, ...new Uint8Array(encrypted)]);
+    
+    // Convert to base64url without padding
+    const base64url = btoa(String.fromCharCode(...combined))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    return { success: true, data: base64url };
+  } catch (error) {
+    console.error('Encryption error:', error);
+    return { success: false, error: error.message };
   }
- 
-    // Get sender's keypair
-    const keyPair = await getStoredKeyPair();
-    if (!keyPair.success) {
-      throw new Error('Failed to retrieve sender keys');
-    }
-     // Get recipient's public key
-    const recipientPublicKey = await getPublicKeyData(recipient);
-    if (!recipientPublicKey) {
-      throw new Error('Failed to retrieve recipient\'s public key');
-    }
-     // Export sender's public key to JWK
-    const senderPublicKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
-     // Import recipient's public key
-    const recipientKey = await crypto.subtle.importKey(
-      'jwk',
-      recipientPublicKey,
-      KEY_ALGORITHM,
-      true,
-      []
-    );
-     // Derive shared secret
-    const sharedSecret = await crypto.subtle.deriveBits(
-      {
-        name: 'ECDH',
-        public: recipientKey
-      },
-      keyPair.privateKey,
-      256
-    );
-     // Generate encryption key
-    const encryptionKey = await crypto.subtle.importKey(
+};
+
+export const decryptMessage = async (encryptedData, senderPublicKey) => {
+  try {
+    // Convert base64url to bytes
+    const bytes = Uint8Array.from(atob(
+      encryptedData.replace(/-/g, '+').replace(/_/g, '/')
+    ), c => c.charCodeAt(0));
+
+    // Split IV and encrypted data
+    const iv = bytes.slice(0, 12);
+    const encrypted = bytes.slice(12);
+
+    // Create decryption key
+    const decryptionKey = await crypto.subtle.importKey(
       'raw',
-      sharedSecret,
+      new TextEncoder().encode(senderPublicKey).slice(0, 32),
       { name: 'AES-GCM' },
       false,
-      ['encrypt']
+      ['decrypt']
     );
-     // Generate IV
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-     // Encrypt message
-    const ciphertext = await crypto.subtle.encrypt(
-      {
-        name: 'AES-GCM',
-        iv: iv
-      },
-      encryptionKey,
-      encoder.encode(message)
+
+    // Decrypt
+    const decrypted = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      decryptionKey,
+      encrypted
     );
-    const compressedData = compressEncryptedData(iv, ciphertext, senderPublicKeyJwk);
-// Final length check including prefix
-const finalMessage = `🔒 @${recipient} #e2e ${compressedData}`;
-if (finalMessage.length > 300) {
-  throw new Error('Encrypted message too long. Please try a shorter message.');
-}
- return {
-  success: true,
-  data: compressedData
-};
-} catch (error) {
-console.error('Message encryption error:', error);
-return {
-  success: false,
-  error: error.message || 'Failed to encrypt message'
-};
-}
- ;
-}
 
-
-
-
-export const decryptMessage = async (encryptedData) => {
-  try {
-  const keyPair = await getStoredKeyPair();
-  if (!keyPair.success) {
-    throw new Error('Failed to retrieve decryption keys');
-  }
-   // Parse compressed encrypted data
-  const { i: iv, c: ciphertext, s: senderKeyParts } = JSON.parse(atob(encryptedData));
-   // Reconstruct sender's public key JWK
-  const [x, y] = senderKeyParts.split('.');
-  const senderPublicKeyJwk = {
-    kty: 'EC',
-    crv: 'P-256',
-    x: x,
-    y: y,
-    ext: true
-  };
-   // Import sender's public key
-  const senderPublicKey = await crypto.subtle.importKey(
-    'jwk',
-    senderPublicKeyJwk,
-    {
-      name: 'ECDH',
-      namedCurve: 'P-256'
-    },
-    true,
-    []
-  );
-   // Derive shared secret
-  const sharedSecret = await crypto.subtle.deriveBits(
-    {
-      name: 'ECDH',
-      public: senderPublicKey
-    },
-    keyPair.privateKey,
-    256
-  );
-   // Generate decryption key
-  const decryptionKey = await crypto.subtle.importKey(
-    'raw',
-    sharedSecret,
-    { name: 'AES-GCM' },
-    false,
-    ['decrypt']
-  );
-   // Decrypt the message
-  const decrypted = await crypto.subtle.decrypt(
-    {
-      name: 'AES-GCM',
-      iv: new Uint8Array(iv)
-    },
-    decryptionKey,
-    new Uint8Array(ciphertext)
-  );
-   return {
-    success: true,
-    data: decoder.decode(decrypted)
-  };
-} catch (error) {
-  console.error('Message decryption error:', error);
-  return {
-    success: false,
-    error: 'Failed to decrypt message'
-  };
-}
-}
-// Store wallet link in encrypted format
-export const storeWalletLink = async (walletLink) => {
-  try {
-    // Store encrypted wallet link in localStorage
-    localStorage.setItem('walletLink', walletLink);
-    return {
-      success: true
-    };
+    const { t: text } = JSON.parse(new TextDecoder().decode(decrypted));
+    return { success: true, data: text };
   } catch (error) {
-    console.error('Wallet link storage error:', error);
-    return {
-      success: false,
-      error: error.message
-    };
+    console.error('Decryption error:', error);
+    return { success: false, error: error.message };
   }
 };
 
 
-
-// Get stored wallet link
-export const getWalletLink = () => {
+// Helper function to check for stored keys
+export const hasStoredKeys = (handle) => {
   try {
-    return localStorage.getItem('walletLink');
+    const keys = localStorage.getItem(`${KEY_STORAGE_PREFIX}${handle}_keypair`);
+    return !!keys;
   } catch (error) {
-    console.error('Wallet link retrieval error:', error);
-    return null;
-  }
-};
-
-// Remove stored wallet link
-export const removeWalletLink = () => {
-  try {
-    localStorage.removeItem('walletLink');
-    return {
-      success: true
-    };
-  } catch (error) {
-    console.error('Wallet link removal error:', error);
-    return {
-      success: false,
-      error: error.message
-    };
+    console.error('Error checking stored keys:', error);
+    return false;
   }
 };

@@ -3,10 +3,11 @@ import { useAuth } from "../context/AuthContext";
 import {
   searchUsers,
   createPost,
-  getPostsByUser,
+  getUserPosts as getPostsByUser,
   initializeAgent,
-} from "../services/api";
-import { encryptMessage, decryptMessage, getPublicKeyData } from '../services/signalEncryption';
+} from "../services/bluesky";
+import { encryptMessage, decryptMessage } from '../services/encryption';
+import { registerPublicKey, getPublicKey as getPublicKeyData, } from '../services/wallet';
 
 import EncryptedPost from "./EncryptedPost";
 

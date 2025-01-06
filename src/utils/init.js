@@ -1,5 +1,56 @@
-import { getPublicKeyData, storeKeyPair } from '../services/signalEncryption';
+import {  generateAndStoreKeyPair as storeKeyPair } from '../services/encryption';
+import { jsd } from "hyperwebjs";
 
+import { registerPublicKey, getPublicKey as getPublicKeyData, } from '../services/wallet';
+
+
+
+
+// Add getPublicKey function
+export const getPublicKey = async (handle, session) => {
+  try {
+    const queryClient = await jsd.ClientFactory.createRPCQueryClient({
+      rpcEndpoint: RPC_ENDPOINT,
+    });
+
+    const isAuthenticatedUser = session?.handle === handle;
+    console.log("Auth check:", { isAuthenticatedUser, sessionHandle: session?.handle, handle });
+
+    const state = await queryClient.jsd.jsd.localState({
+      index: CONTRACT_INDEX,
+      key: `bluesky/${handle}`,
+    });
+    console.log("State check:", state);
+
+    if (!state || !state.value) {
+      if (!session) {
+        throw new Error("Session is required for key operations");
+      }
+
+      return {
+        success: true,
+        publicKey: state,
+        handle: handle
+      };
+    }
+
+    let keyData;
+    try {
+      keyData = JSON.parse(state.value);
+    } catch (error) {
+      keyData = state;
+    }
+
+    return {
+      success: true,
+      publicKey: state,
+      handle: handle
+    };
+  } catch (error) {
+    console.error("Error with public key:", error);
+    return { success: false, error: error.message };
+  }
+};
 
 export const initializeKeys = async (session, setPublicKey, setError) => {
   try {

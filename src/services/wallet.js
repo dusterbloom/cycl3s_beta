@@ -1,9 +1,13 @@
-import { DirectSecp256k1Wallet } from "@cosmjs/proto-signing";
 import { getSigningJsdClient, jsd } from "hyperwebjs";
-import { SigningCosmWasmClient } from "@cosmjs/cosmwasm-stargate";
-import { GasPrice } from "@cosmjs/stargate";
-import { initializeSignalProtocol } from "./signalEncryption"; // Add this import
-import { generateAndStoreKeyPair } from "./signalEncryption";
+import { generateAndStoreKeyPair } from "./encryption";
+
+
+// Update constants at the top of the file
+const CHAIN_ID = "hyperweb-1"; // Updated chain ID
+const RPC_ENDPOINT = "http://localhost:26657";
+const REST_ENDPOINT = "http://localhost:1317";
+const CONTRACT_INDEX = "1";
+
 
 export const connectKeplr = async () => {
   try {
@@ -46,11 +50,6 @@ export const getWalletLink = async () => {
   }
 };
 
-// Add key types enum
-const KeyTypes = {
-  PERMANENT: 'PERMANENT',
-  TEMPORARY: 'TEMPORARY'
-};
 
 export const registerPublicKey = async (handle, publicKey, keyType = KeyTypes.PERMANENT) => {
   try {
@@ -86,7 +85,7 @@ export const registerPublicKey = async (handle, publicKey, keyType = KeyTypes.PE
         creator: address,
         index: CONTRACT_INDEX,
         // Use different function names based on key type
-        fnName: keyType === KeyTypes.TEMPORARY ? "registerTemporaryKey" : "registerBlueskyHandle",
+        fnName: "registerBlueskyHandle",
         arg: msgArg,
       },
     };
@@ -133,7 +132,7 @@ export const getPublicKey = async (handle, session) => {
       return {
         success: true,
         publicKey: state,
-        keyType: isAuthenticatedUser ? KeyTypes.PERMANENT : KeyTypes.TEMPORARY
+        handle: handle
       };
     }
 
@@ -149,7 +148,7 @@ export const getPublicKey = async (handle, session) => {
     return {
       success: true,
       publicKey: state,
-      keyType: keyData.keyType || KeyTypes.PERMANENT // Default to PERMANENT for backward compatibility
+      handle: handle
     };
   } catch (error) {
     console.error("Error with public key:", error);
@@ -180,11 +179,6 @@ export const queryPublicKey = async (handle) => {
     return { success: false, error: error.message };
   }
 };
-// Update constants at the top of the file
-const CHAIN_ID = "hyperweb-1"; // Updated chain ID
-const RPC_ENDPOINT = "http://localhost:26657";
-const REST_ENDPOINT = "http://localhost:1317";
-const CONTRACT_INDEX = "17";
 
 export const suggestChain = async () => {
   try {
@@ -240,6 +234,30 @@ export const suggestChain = async () => {
   } catch (error) {
     console.error("Failed to suggest chain:", error);
     return { success: false, error: error.message };
+  }
+};
+
+export const removeWalletLink = async () => {
+  try {
+    if (!window.keplr) {
+      return { success: false, error: "Keplr extension not found" };
+    }
+
+    // Clear any stored wallet data
+    localStorage.removeItem('keplr_session');
+    
+    // Disconnect from Keplr (if possible)
+    if (window.keplr.disconnect) {
+      await window.keplr.disconnect();
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to remove wallet link:", error);
+    return {
+      success: false,
+      error: error.message,
+    };
   }
 };
 

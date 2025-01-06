@@ -12,6 +12,13 @@ const formatIdentifier = (identifier) => {
   return identifier;
 };
 
+export const initializeAgent = (session) => {
+  if (session?.accessJwt) {
+    agent.session = session;
+  }
+};
+
+
 export const loginWithBluesky = async (identifier, password) => {
   try {
     const formattedIdentifier = formatIdentifier(identifier);
@@ -105,15 +112,30 @@ export const getTimeline = async () => {
   }
 };
 
-export const createPost = async (text) => {
+export const createPost = async ({ text, session }) => {
   try {
     if (!agent.session) {
       throw new Error('Not authenticated');
     }
 
-    const response = await agent.post({
+    // Ensure text is a string and not undefined/null
+    if (!text || typeof text !== 'string') {
+      throw new Error('Post text must be a string');
+    }
+
+    // Create a proper post record structure
+    const record = {
+      $type: 'app.bsky.feed.post',
       text: text,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      langs: ['en']
+    };
+
+    // Use the proper createRecord endpoint
+    const response = await agent.com.atproto.repo.createRecord({
+      repo: session.did,
+      collection: 'app.bsky.feed.post',
+      record: record
     });
 
     return {

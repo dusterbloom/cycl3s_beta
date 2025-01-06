@@ -5,22 +5,16 @@ import { searchUsers } from "../services/bluesky";
 import {
   encryptMessage,
   hasStoredKeys as hasKeys,
-  getPublicKeyData,
+  
   generateAndStoreKeyPair
-} from "../services/signalEncryption";
+} from "../services/encryption";
 import KeySetup from "./KeySetup";
 
 import {
   registerPublicKey,
-  getPublicKey,
+  getPublicKey as getPublicKeyData,
+  getPublicKey
 } from "../services/wallet";
-
-
-// Add key types enum
-const KeyTypes = {
-  PERMANENT: 'PERMANENT',
-  TEMPORARY: 'TEMPORARY'
-};
 
 export default function CreatePost({ onPostCreated }) {
   const { session, isAuthenticated, validateSession } = useAuth();
@@ -34,6 +28,7 @@ export default function CreatePost({ onPostCreated }) {
   const [searchInput, setSearchInput] = useState("");
   const [needsKeySetup, setNeedsKeySetup] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+  const [sender, setSender] = useState(null);
 
   // Check if keys are set up
   // Update the useEffect hook for checking keys
@@ -50,6 +45,7 @@ export default function CreatePost({ onPostCreated }) {
         // First check if user is registered in contract
         const publicKeyResult = await getPublicKey(session.handle, session);
         console.log("Public key check result:", publicKeyResult);
+        setSender(publicKeyResult.publicKey);
 
         if (!publicKeyResult?.success) {
           setNeedsKeySetup(true);
@@ -120,47 +116,32 @@ export default function CreatePost({ onPostCreated }) {
       console.error("User search error:", error);
     }
   };
-
   const selectRecipient = async (user) => {
     try {
       setLoading(true);
       setError("");
   
       // Check if the recipient has a public key registered
-      const recipientPublicKey = await getPublicKey(user.handle);
-      if (!recipientPublicKey?.publicKey) {
-        // Recipient doesn't have a key, generate and register a temporary key for them
-        const temporaryKey = await generateAndStoreKeyPair(user.handle);
-        if (!temporaryKey) {
-          throw new Error(`Failed to generate temporary key for ${user.handle}`);
-        }
-  
-        const registrationResult = await registerPublicKey(user.handle, temporaryKey.publicKey, KeyTypes.TEMPORARY);
-        if (!registrationResult.success) {
-          throw new Error(`Failed to register temporary key for ${user.handle}`);
-        }
-  
-        // Store the recipient with their temporary public key
-        setRecipient({
-          handle: user.handle,
-          displayName: user.displayName,
-          publicKey: temporaryKey.publicKey,
-        });
-      } else {
-        // Store the recipient with their existing public key
-        setRecipient({
-          handle: user.handle,
-          displayName: user.displayName,
-          publicKey: recipientPublicKey.publicKey,
-        });
+      const recipientPublicKey = await getPublicKey(user.handle, session);
+      
+      if (!recipientPublicKey?.success || !recipientPublicKey?.publicKey?.value) {
+        setError(`@${user.handle} needs to set up encryption first`);
+        setRecipient(null);
+        return;
       }
+  
+      // Store the recipient with their public key
+      setRecipient({
+        handle: user.handle,
+        publicKey: recipientPublicKey.publicKey
+      });
   
       setShowUserSearch(false);
       setSearchResults([]);
       setSearchInput("");
     } catch (error) {
       console.error("Recipient validation error:", error);
-      setError(error.message);
+      setError(`@${user.handle} needs to set up encryption first`);
       setRecipient(null);
     } finally {
       setLoading(false);
@@ -170,56 +151,54 @@ export default function CreatePost({ onPostCreated }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!content.trim()) return;
-
+  
     setLoading(true);
     setError("");
-
+  
     try {
-      // Validate session before proceeding
       if (!session?.handle) {
         throw new Error("Session invalid - please log in again");
       }
-
+  
       let postContent = content;
       if (isEncrypted) {
         if (!recipient?.handle) {
-          throw new Error(
-            "Please select a valid recipient for encrypted message"
-          );
+          throw new Error("Please select a valid recipient for encrypted message");
         }
-
-        // Make sure we have the recipient's public key
-        if (!recipient.publicKey) {
-          const recipientPublicKey = await getPublicKeyData(recipient.handle);
-          if (!recipientPublicKey) {
-            throw new Error(
-              `${recipient.handle} hasn't set up encryption keys yet`
-            );
-          }
-          recipient.publicKey = recipientPublicKey;
-        }
-
-        console.log(
-          "Encrypting message with recipient key:",
-          recipient.publicKey
+  
+        const encrypted = await encryptMessage(
+          content,
+          recipient.handle,
+          session.handle,
+          session
         );
-
-        const encrypted = await encryptMessage(content, recipient.publicKey);
+  
         if (!encrypted.success) {
           throw new Error(encrypted.error || "Encryption failed");
         }
-
-        postContent = `🔒 @${recipient.handle} #e2e ${encrypted.data}`;
+  
+        postContent = String(`🔒 @${recipient.handle} #e2e ${encrypted.data}`);
       }
-
-      const response = await createPost(postContent);
-      if (response.success) {
-        setContent("");
-        setRecipient(null); // Clear recipient after successful post
-        setIsEncrypted(false); // Reset encryption state
-      } else {
-        throw new Error(response.error || "Failed to create post");
+      console.log("Encrypted preview post content", postContent)
+      // Create the post using Bluesky API
+      const postResult = await createPost({
+        text: postContent.toString(),
+        session
+      });
+  
+      if (!postResult.success) {
+        throw new Error(postResult.error || "Failed to create post");
       }
+  
+      // Clear form and notify parent
+      setContent("");
+      setIsEncrypted(false);
+      setRecipient(null);
+      setSearchInput("");
+      if (onPostCreated) {
+        onPostCreated(postResult.data);
+      }
+  
     } catch (error) {
       console.error("Post creation error:", error);
       setError(error.message);
@@ -227,6 +206,7 @@ export default function CreatePost({ onPostCreated }) {
       setLoading(false);
     }
   };
+  
   return (
     <form onSubmit={handleSubmit} className="create-post">
       {needsKeySetup ? (

@@ -2,10 +2,11 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
   hasStoredKeys as hasKeys,
-  getPublicKeyData,
   decryptMessage,
-} from "../services/signalEncryption"; // Add this import
+} from "../services/encryption"; // Add this import
 import KeySetup from "./KeySetup";
+import { registerPublicKey, getPublicKey as getPublicKeyData, } from '../services/wallet';
+
 
 export default function EncryptedPost({ post }) {
   const { session, isAuthenticated, validateSession } = useAuth();
@@ -14,29 +15,6 @@ export default function EncryptedPost({ post }) {
   const [loading, setLoading] = useState(false);
   const [showKeySetup, setShowKeySetup] = useState(false);
 
-  // Extract recipient handle from the post text
-  const getRecipientHandle = () => {
-    const match = post.record.text.match(/🔒 @([a-zA-Z0-9.-]+)/);
-    return match ? match[1].toLowerCase() : null;
-  };
-
-  // Check if the current user is the recipient
-  const isRecipient = () => {
-    const recipientHandle = getRecipientHandle();
-    // console.log("Checking recipient:", {
-    //   recipientHandle,
-    //   currentUser: session?.handle,
-    //   isMatch: recipientHandle === session?.handle,
-    // });
-    return recipientHandle === session?.handle;
-  };
-
-  // console.log("Post data:", {
-  //   text: post.record.text,
-  //   session: session,
-  //   recipientHandle: getRecipientHandle(),
-  //   isRecipient: isRecipient(),
-  // });
 
   const canDecrypt = () => {
     const recipientHandle = getRecipientHandle();
@@ -61,42 +39,35 @@ export default function EncryptedPost({ post }) {
     handleDecrypt();
   };
 
+  
   const handleDecrypt = async () => {
     setLoading(true);
     setError(null);
     try {
       // Extract encrypted data from post
       const match = post.record.text.match(
-        /🔒 @([a-zA-Z0-9.-]+) #e2e ([A-Za-z0-9+/\-_=]+)/ // Added = to base64 chars
+        /🔒 @([a-zA-Z0-9.-]+) #e2e ([A-Za-z0-9+/\-_]+)/ // Updated regex to match format
       );
       if (!match) {
         throw new Error("Invalid encrypted message format");
       }
       const [, recipientHandle, encryptedData] = match;
-
-      // // Verify recipient
-      // if (recipientHandle.toLowerCase() !== session?.handle.toLowerCase()) {
-      //   throw new Error("This message is not encrypted for you");
-      // }
-
+  
       // Get sender's public key
-      const senderPublicKey = await getPublicKeyData(post.author.handle);
-      if (!senderPublicKey) {
+      const senderKeyData = await getPublicKeyData(post.author.handle);
+      if (!senderKeyData?.success) {
         throw new Error("Unable to retrieve sender's encryption key");
       }
-
-      // console.log("Decryption attempt:", {
-      //   sender: post.author.handle,
-      //   recipient: recipientHandle,
-      //   senderPublicKey,
-      //   encryptedData
-      // });
-
-      const decrypted = await decryptMessage(encryptedData, senderPublicKey);
+  
+      const decrypted = await decryptMessage(
+        encryptedData,
+        senderKeyData.publicKey.value // Pass the value directly
+      );
+      
       if (!decrypted.success) {
         throw new Error(decrypted.error || "Unable to decrypt message");
       }
-
+  
       setDecryptedContent(decrypted.data);
     } catch (error) {
       console.error("Decryption error:", error);
@@ -104,6 +75,12 @@ export default function EncryptedPost({ post }) {
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Also update the recipient handle extraction
+  const getRecipientHandle = () => {
+    const match = post.record.text.match(/🔒 @([a-zA-Z0-9.-]+) #e2e/);
+    return match ? match[1].toLowerCase() : null;
   };
 
   return (
